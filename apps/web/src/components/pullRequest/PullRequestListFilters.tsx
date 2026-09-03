@@ -16,8 +16,6 @@ import {
   FolderGit2Icon,
   GitPullRequestDraftIcon,
   LayersIcon,
-  ListFilterIcon,
-  LoaderIcon,
   SearchIcon,
   TagIcon,
   UserRoundIcon,
@@ -26,22 +24,20 @@ import { type ElementType, useState } from "react";
 
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { WorkspaceFilterMenu } from "../WorkspaceFilterMenu";
+import { WorkspaceSearchInput } from "../WorkspaceSearchInput";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
-import { Button } from "../ui/button";
 
 import {
-  Menu,
   MenuCheckboxItem,
   MenuGroupLabel,
   MenuItem,
-  MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
   MenuSeparator,
   MenuSub,
   MenuSubPopup,
   MenuSubTrigger,
-  MenuTrigger,
 } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -118,18 +114,13 @@ export function PullRequestSearchInput({
   onChange: (value: string) => void;
 }) {
   return (
-    <InputGroup className="min-w-0 flex-1 **:[input]:h-9 sm:**:[input]:h-8">
-      <InputGroupAddon>
-        {busy ? <LoaderIcon aria-hidden className="animate-spin" /> : <SearchIcon aria-hidden />}
-      </InputGroupAddon>
-      <InputGroupInput
-        type="search"
-        value={value}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        placeholder="Search pull requests, or label:bug"
-        aria-label="Search pull requests"
-      />
-    </InputGroup>
+    <WorkspaceSearchInput
+      ariaLabel="Search pull requests"
+      busy={busy}
+      onChange={onChange}
+      placeholder="Search pull requests, or label:bug"
+      value={value}
+    />
   );
 }
 
@@ -525,105 +516,87 @@ export function PullRequestFiltersMenu({
       })),
   ];
   return (
-    <Menu onOpenChange={onOpenChange}>
-      <MenuTrigger
-        render={
-          <Button
-            className={filterCount > 0 ? "[--control-icon-color:currentColor]" : undefined}
-            variant="outline"
-          />
+    <WorkspaceFilterMenu activeCount={filterCount} onOpenChange={onOpenChange}>
+      <PullRequestFilterRadioSubmenu
+        label="State"
+        value={state}
+        options={stateOptions}
+        onChange={onState}
+      />
+      <PullRequestFilterRadioSubmenu
+        label="Involvement"
+        value={involvement}
+        options={involvementOptions}
+        onChange={onInvolvement}
+      />
+      <MenuSeparator />
+      <PullRequestAuthorFilter
+        value={filters.author}
+        options={authorOptions}
+        onChange={(author) => updateFilters({ author })}
+      />
+      <PullRequestLabelFilter
+        value={selectedLabels}
+        options={labelOptions}
+        onChange={(labels) =>
+          updateFilters({
+            labels: labels.length === 0 ? undefined : labels.slice(0, 10).map((label) => [label]),
+          })
         }
-      >
-        <ListFilterIcon className="size-4" />
-        <span>Filters</span>
-        {filterCount > 0 ? (
-          <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">
-            {filterCount}
-          </span>
-        ) : null}
-      </MenuTrigger>
-      <MenuPopup align="end" side="bottom" className="w-56">
-        <PullRequestFilterRadioSubmenu
-          label="State"
-          value={state}
-          options={stateOptions}
-          onChange={onState}
-        />
-        <PullRequestFilterRadioSubmenu
-          label="Involvement"
-          value={involvement}
-          options={involvementOptions}
-          onChange={onInvolvement}
-        />
-        <MenuSeparator />
-        <PullRequestAuthorFilter
-          value={filters.author}
-          options={authorOptions}
-          onChange={(author) => updateFilters({ author })}
-        />
-        <PullRequestLabelFilter
-          value={selectedLabels}
-          options={labelOptions}
-          onChange={(labels) =>
-            updateFilters({
-              labels: labels.length === 0 ? undefined : labels.slice(0, 10).map((label) => [label]),
-            })
-          }
-        />
-        <PullRequestFilterRadioSubmenu
-          label="Draft"
-          value={filters.draft ?? UNFILTERED_VALUE}
-          options={DRAFT_OPTIONS}
-          onChange={(draft) => updateFilter("draft", draft)}
-        />
-        <PullRequestFilterRadioSubmenu
-          label="Review"
-          value={filters.review ?? UNFILTERED_VALUE}
-          options={REVIEW_OPTIONS}
-          onChange={(review) => updateFilter("review", review)}
-        />
-        <PullRequestFilterRadioSubmenu
-          label="Checks"
-          value={filters.checks ?? UNFILTERED_VALUE}
-          options={CHECKS_OPTIONS}
-          onChange={(checks) => updateFilter("checks", checks)}
-        />
-        {hostOptions.length > 2 ? (
-          <>
-            <MenuSeparator />
-            <PullRequestFilterRadioSubmenu
-              label="Host"
-              value={host ?? ALL_HOSTS_VALUE}
-              options={hostOptions}
-              onChange={(next) => onHost(next === ALL_HOSTS_VALUE ? undefined : next)}
-            />
-          </>
-        ) : null}
-        {serverOptions.length > 2 ? (
-          <>
-            <MenuSeparator />
-            <PullRequestFilterRadioSubmenu
-              label="Server"
-              value={server ?? ALL_SERVERS_VALUE}
-              options={serverOptions}
-              onChange={(next) =>
-                onServer(next === ALL_SERVERS_VALUE ? undefined : (next as EnvironmentId))
-              }
-            />
-          </>
-        ) : null}
-        <MenuSeparator />
-        <PullRequestFilterRadioSubmenu
-          label="Project"
-          value={projectValue}
-          options={projectOptions}
-          onChange={(next) => {
-            const project = projects.find((candidate) => pullRequestProjectKey(candidate) === next);
-            if (project) onProject(project.id, project.environmentId);
-            else if (projectId !== undefined) onProject(undefined, undefined);
-          }}
-        />
-      </MenuPopup>
-    </Menu>
+      />
+      <PullRequestFilterRadioSubmenu
+        label="Draft"
+        value={filters.draft ?? UNFILTERED_VALUE}
+        options={DRAFT_OPTIONS}
+        onChange={(draft) => updateFilter("draft", draft)}
+      />
+      <PullRequestFilterRadioSubmenu
+        label="Review"
+        value={filters.review ?? UNFILTERED_VALUE}
+        options={REVIEW_OPTIONS}
+        onChange={(review) => updateFilter("review", review)}
+      />
+      <PullRequestFilterRadioSubmenu
+        label="Checks"
+        value={filters.checks ?? UNFILTERED_VALUE}
+        options={CHECKS_OPTIONS}
+        onChange={(checks) => updateFilter("checks", checks)}
+      />
+      {hostOptions.length > 2 ? (
+        <>
+          <MenuSeparator />
+          <PullRequestFilterRadioSubmenu
+            label="Host"
+            value={host ?? ALL_HOSTS_VALUE}
+            options={hostOptions}
+            onChange={(next) => onHost(next === ALL_HOSTS_VALUE ? undefined : next)}
+          />
+        </>
+      ) : null}
+      {serverOptions.length > 2 ? (
+        <>
+          <MenuSeparator />
+          <PullRequestFilterRadioSubmenu
+            label="Server"
+            value={server ?? ALL_SERVERS_VALUE}
+            options={serverOptions}
+            onChange={(next) =>
+              onServer(next === ALL_SERVERS_VALUE ? undefined : (next as EnvironmentId))
+            }
+          />
+        </>
+      ) : null}
+      <MenuSeparator />
+      <PullRequestFilterRadioSubmenu
+        label="Project"
+        value={projectValue}
+        options={projectOptions}
+        onChange={(next) => {
+          const project = projects.find((candidate) => pullRequestProjectKey(candidate) === next);
+          if (project) onProject(project.id, project.environmentId);
+          else if (projectId !== undefined) onProject(undefined, undefined);
+        }}
+      />
+    </WorkspaceFilterMenu>
   );
 }
