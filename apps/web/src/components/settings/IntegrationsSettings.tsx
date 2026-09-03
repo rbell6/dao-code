@@ -1,8 +1,8 @@
 /**
  * Integrations settings - preferences for surfaces T3 Code embeds rather than
- * owns. Browser is the first section: the defaults a preview tab opens at,
- * applied to both hand-opened tabs and agent `preview_open` calls that don't
- * state their own size.
+ * owns. Jira reports the integration state owned by each environment. Browser
+ * contains the defaults a preview tab opens at, applied to both hand-opened
+ * tabs and agent `preview_open` calls that don't state their own size.
  *
  * @module IntegrationsSettings
  */
@@ -33,14 +33,30 @@ import {
   type PreviewViewportSetting,
 } from "@t3tools/contracts";
 import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
-import { InfoIcon, Plus as PlusIcon, Trash2 as Trash2Icon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import {
+  CheckCircle2Icon,
+  CheckIcon,
+  CircleAlertIcon,
+  CopyIcon,
+  ExternalLinkIcon,
+  InfoIcon,
+  LoaderIcon,
+  Plus as PlusIcon,
+  RefreshCwIcon,
+  SquareCheckBigIcon,
+  Trash2 as Trash2Icon,
+} from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { ScreenRotationIcon } from "~/browser/ScreenRotationIcon";
 import { previewBridge } from "~/components/preview/previewBridge";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn, randomUUID } from "~/lib/utils";
 import { useEnvironments } from "~/state/environments";
+import { jiraEnvironment } from "~/state/jira";
+import { useEnvironmentQuery } from "~/state/query";
 import { isElectron } from "../../env";
 
 import { Badge } from "../ui/badge";
@@ -66,6 +82,7 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   getClientSettings,
@@ -82,10 +99,27 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
+import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { searchableSetting } from "./settingsSearch";
 
 const FILL_VALUE = "fill";
 const RESPONSIVE_VALUE = "responsive";
+const JIRA_LOGIN_COMMAND = "acli jira auth login --web";
+const ACLI_INSTALL_URL = "https://developer.atlassian.com/cloud/acli/guides/install-acli/";
+
+export function jiraAuthenticationTypeLabel(value: string | null): string {
+  switch (value?.trim().toLowerCase()) {
+    case "api_token":
+      return "API token";
+    case "oauth":
+      return "OAuth";
+    case undefined:
+    case "":
+      return "Unknown";
+    default:
+      return value?.replaceAll("_", " ") ?? "Unknown";
+  }
+}
 
 type BrowserProfileDataBridge = Pick<
   NonNullable<typeof previewBridge>,
@@ -906,6 +940,196 @@ function BrowserDefaultProfileSetting({ disabled }: { readonly disabled: boolean
   );
 }
 
+function JiraConnectionBadge({
+  state,
+  pending,
+}: {
+  readonly state: "ready" | "missing-tool" | "unauthenticated" | "failed" | null;
+  readonly pending: boolean;
+}) {
+  if (pending && state === null) {
+    return (
+      <Badge variant="secondary">
+        <LoaderIcon className="animate-spin" /> Checking
+      </Badge>
+    );
+  }
+  switch (state) {
+    case "ready":
+      return (
+        <Badge variant="success">
+          <CheckCircle2Icon /> Ready
+        </Badge>
+      );
+    case "missing-tool":
+      return (
+        <Badge variant="warning">
+          <CircleAlertIcon /> CLI missing
+        </Badge>
+      );
+    case "unauthenticated":
+      return (
+        <Badge variant="warning">
+          <CircleAlertIcon /> Signed out
+        </Badge>
+      );
+    case "failed":
+    case null:
+      return (
+        <Badge variant="error">
+          <CircleAlertIcon /> Unavailable
+        </Badge>
+      );
+  }
+}
+
+function JiraEnvironmentSetting({
+  environmentId,
+  label,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+}) {
+  const status = useEnvironmentQuery(
+    jiraEnvironment.connectionStatus({ environmentId, input: {} }),
+  );
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: "Jira login command",
+    onError: () =>
+      toastManager.add({ type: "error", title: "Could not copy the Jira login command" }),
+  });
+  const state = status.data?.state ?? (status.error ? "failed" : null);
+  const detail =
+    status.error ?? status.data?.detail ?? "Checking Atlassian CLI on this environment.";
+
+  const setupAction =
+    state === "missing-tool" ? (
+      <Button
+        render={<a href={ACLI_INSTALL_URL} rel="noreferrer" target="_blank" />}
+        size="sm"
+        variant="outline"
+      >
+        Install ACLI <ExternalLinkIcon />
+      </Button>
+    ) : state === "unauthenticated" ? (
+      <Button
+        onClick={() => copyToClipboard(JIRA_LOGIN_COMMAND, undefined)}
+        size="sm"
+        variant="outline"
+      >
+        {isCopied ? <CheckIcon className="text-success" /> : <CopyIcon />}
+        {isCopied ? "Copied" : "Copy login command"}
+      </Button>
+    ) : null;
+
+  return (
+    <SettingsRow
+      title={label}
+      description="Jira Cloud account used by Atlassian CLI on this environment. Credentials remain in ACLI."
+      status={
+        <div className="flex items-center gap-2">
+          <JiraConnectionBadge pending={status.isPending} state={state} />
+          <span className={cn(state === "failed" && "text-destructive")}>{detail}</span>
+        </div>
+      }
+      control={
+        <>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  aria-label={`Refresh Jira status for ${label}`}
+                  disabled={status.isPending}
+                  onClick={status.refresh}
+                  size="icon-sm"
+                  variant="ghost-muted"
+                >
+                  <RefreshCwIcon className={cn(status.isPending && "animate-spin")} />
+                </Button>
+              }
+            />
+            <TooltipPopup side="top">Refresh status</TooltipPopup>
+          </Tooltip>
+          {setupAction}
+          {state === "ready" ? (
+            <Button
+              render={<Link search={{ environmentId }} to="/jira" />}
+              size="sm"
+              variant="outline"
+            >
+              Open Jira
+            </Button>
+          ) : null}
+        </>
+      }
+    >
+      {status.data?.state === "ready" ? (
+        <div className="mt-3 grid gap-3 border-t border-border/60 py-3 text-xs sm:grid-cols-3">
+          <JiraConnectionValue label="Site" value={status.data.site ?? "Unknown"} />
+          <div className="min-w-0">
+            <p className="text-muted-foreground">Account</p>
+            {status.data.email ? (
+              <RedactedSensitiveText
+                ariaLabel="Toggle Jira account email visibility"
+                className="mt-1 max-w-full truncate font-medium"
+                hideTooltip="Click to hide email"
+                revealTooltip="Click to reveal email"
+                value={status.data.email}
+              />
+            ) : (
+              <p className="mt-1 font-medium">Unknown</p>
+            )}
+          </div>
+          <JiraConnectionValue
+            label="Authentication"
+            value={jiraAuthenticationTypeLabel(status.data.authenticationType)}
+          />
+        </div>
+      ) : state === "unauthenticated" ? (
+        <code className="mt-3 block border-t border-border/60 py-3 text-xs">
+          {JIRA_LOGIN_COMMAND}
+        </code>
+      ) : null}
+    </SettingsRow>
+  );
+}
+
+function JiraConnectionValue({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate font-medium">{value}</p>
+    </div>
+  );
+}
+
+function JiraSettingsSection() {
+  const { environments, isReady } = useEnvironments();
+  const capableEnvironments = environments.filter(
+    (environment) => environment.serverConfig?.environment.capabilities.jira === true,
+  );
+
+  return (
+    <SettingsSection id="jira" icon={<SquareCheckBigIcon className="size-4" />} title="Jira">
+      {capableEnvironments.map((environment) => (
+        <JiraEnvironmentSetting
+          environmentId={environment.environmentId}
+          key={environment.environmentId}
+          label={environment.label}
+        />
+      ))}
+      {isReady && capableEnvironments.length === 0 ? (
+        <SettingsRow
+          {...searchableSetting("jira")}
+          title="Jira Cloud"
+          description="No connected environment supports Jira yet. Update the environment and reconnect it."
+          status={<JiraConnectionBadge pending={false} state={null} />}
+        />
+      ) : null}
+    </SettingsSection>
+  );
+}
+
 export function IntegrationsSettingsPanel() {
   // Client-local preview defaults are editable only where the preview exists.
   const previewDefaultsDisabled = !isElectron;
@@ -924,6 +1148,7 @@ export function IntegrationsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <JiraSettingsSection />
       <SettingsSection id="browser" title="Browser">
         {/* Server-authoritative, so it stays editable on any client anchored to
             a server; `serverScoped` covers the hosted app, which has none. It

@@ -2,10 +2,23 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
 import * as JiraCli from "./JiraCli.ts";
-import { jiraListJql } from "./JiraService.ts";
+import { jiraAuthStatus, jiraListJql } from "./JiraService.ts";
 import * as JiraService from "./JiraService.ts";
 
 describe("jiraListJql", () => {
+  it("reads account details from ACLI auth status", () => {
+    expect(
+      jiraAuthStatus(`✓ Authenticated
+  Site: bamboohr.atlassian.net
+  Email: rbell@bamboohr.com
+  Authentication Type: api_token`),
+    ).toEqual({
+      site: "bamboohr.atlassian.net",
+      email: "rbell@bamboohr.com",
+      authenticationType: "api_token",
+    });
+  });
+
   it("builds the default my-work view with bounded filters", () => {
     expect(
       jiraListJql({

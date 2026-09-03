@@ -110,19 +110,42 @@ function siteFromStatus(output: string): string | null {
   return output.match(/(?:https?:\/\/)?([a-z0-9][a-z0-9.-]*\.atlassian\.net)\b/iu)?.[1] ?? null;
 }
 
+function labeledStatusValue(output: string, label: string): string | null {
+  const line = output
+    .split(/\r?\n/u)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.toLowerCase().startsWith(`${label.toLowerCase()}:`));
+  return line?.slice(line.indexOf(":") + 1).trim() || null;
+}
+
+export function jiraAuthStatus(
+  output: string,
+): Pick<JiraConnectionStatus, "site" | "email" | "authenticationType"> {
+  return {
+    site: siteFromStatus(output),
+    email: labeledStatusValue(output, "Email"),
+    authenticationType: labeledStatusValue(output, "Authentication Type"),
+  };
+}
+
 export const make = Effect.gen(function* () {
   const cli = yield* JiraCli.JiraCli;
 
   const connectionStatus = cli.execute("connectionStatus", ["jira", "auth", "status"]).pipe(
-    Effect.map(({ stdout, stderr }): JiraConnectionStatus => ({
-      state: "ready",
-      site: siteFromStatus(`${stdout}\n${stderr}`),
-      detail: "Atlassian CLI is authenticated.",
-    })),
+    Effect.map(({ stdout, stderr }): JiraConnectionStatus => {
+      const output = `${stdout}\n${stderr}`;
+      return {
+        state: "ready",
+        ...jiraAuthStatus(output),
+        detail: "Atlassian CLI is authenticated.",
+      };
+    }),
     Effect.catch((error) =>
       Effect.succeed({
         state: error.reason,
         site: null,
+        email: null,
+        authenticationType: null,
         detail: error.detail,
       } satisfies JiraConnectionStatus),
     ),

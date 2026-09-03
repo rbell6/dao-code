@@ -16,6 +16,10 @@ acli jira auth login --web
 Reconnect the environment after installing the CLI. The Jira workspace reports whether ACLI is
 missing, signed out, or ready, and shows the active Jira Cloud site when ACLI provides it.
 
+Open **Settings → Integrations → Jira** to inspect each environment's CLI status, active site,
+account, and authentication type. The settings row can refresh the status, open the Jira workspace,
+or provide the appropriate setup action when ACLI is missing or signed out.
+
 ## Find work
 
 The default **My work** view includes issues you are assigned, reported, or watching. Use the other

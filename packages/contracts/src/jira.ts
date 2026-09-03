@@ -13,6 +13,8 @@ export type JiraConnectionState = typeof JiraConnectionState.Type;
 export const JiraConnectionStatus = Schema.Struct({
   state: JiraConnectionState,
   site: Schema.NullOr(Schema.String),
+  email: Schema.NullOr(Schema.String),
+  authenticationType: Schema.NullOr(Schema.String),
   detail: Schema.String,
 });
 export type JiraConnectionStatus = typeof JiraConnectionStatus.Type;
