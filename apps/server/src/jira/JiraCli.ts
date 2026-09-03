@@ -46,6 +46,12 @@ function processFailure(operation: string, cause: VcsError): JiraCliError {
 
 function commandFailure(operation: string, stdout: string, stderr: string): JiraCliError {
   const output = `${stdout}\n${stderr}`.toLowerCase();
+  const reportedError = stderr
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0)
+    ?.replace(/^✗\s*/u, "")
+    .slice(0, 500);
   const unauthenticated =
     output.includes("auth login") ||
     output.includes("not authenticated") ||
@@ -57,7 +63,7 @@ function commandFailure(operation: string, stdout: string, stderr: string): Jira
     reason: unauthenticated ? "unauthenticated" : "failed",
     detail: unauthenticated
       ? "Run `acli jira auth login --web` on this environment."
-      : "Atlassian CLI could not complete the request.",
+      : (reportedError ?? "Atlassian CLI could not complete the request."),
   });
 }
 

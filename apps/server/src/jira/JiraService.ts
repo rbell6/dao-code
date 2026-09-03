@@ -138,7 +138,7 @@ export const make = Effect.gen(function* () {
         "--jql",
         jql,
         "--fields",
-        "key,summary,status,issuetype,priority,assignee,reporter,labels,created,updated,project",
+        "key,summary,status,issuetype,priority,assignee,reporter,labels",
         "--limit",
         String(input.limit ?? 50),
         "--json",

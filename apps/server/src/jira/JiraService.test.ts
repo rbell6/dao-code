@@ -38,22 +38,42 @@ describe("jiraListJql", () => {
     );
   });
 
-  it.effect("runs mutations as non-interactive ACLI commands", () =>
+  it.effect("uses ACLI-supported search fields and non-interactive mutations", () =>
     Effect.gen(function* () {
       const calls: Array<{ readonly operation: string; readonly args: ReadonlyArray<string> }> = [];
       const cli = JiraCli.JiraCli.of({
         execute: (operation, args) =>
           Effect.sync(() => {
             calls.push({ operation, args });
-            return { stdout: "", stderr: "" };
+            return {
+              stdout:
+                operation === "list" ? '[{"key":"APP-42","fields":{"summary":"Test issue"}}]' : "",
+              stderr: "",
+            };
           }),
       });
       const service = yield* JiraService.make.pipe(Effect.provideService(JiraCli.JiraCli, cli));
 
+      yield* service.list({ view: "assigned", limit: 50 });
       yield* service.comment({ key: "APP-42", body: "Ready for review." });
       yield* service.transition({ key: "APP-42", status: "In Progress" });
 
       expect(calls).toEqual([
+        {
+          operation: "list",
+          args: [
+            "jira",
+            "workitem",
+            "search",
+            "--jql",
+            "assignee = currentUser() ORDER BY updated DESC",
+            "--fields",
+            "key,summary,status,issuetype,priority,assignee,reporter,labels",
+            "--limit",
+            "50",
+            "--json",
+          ],
+        },
         {
           operation: "comment",
           args: [
