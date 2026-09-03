@@ -1,5 +1,7 @@
 {
   "id": "/",
+  "name": "Dao",
+  "short_name": "Dao",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
