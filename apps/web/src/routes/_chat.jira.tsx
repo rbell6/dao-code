@@ -12,21 +12,27 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   ArrowUpRightIcon,
-  CheckCircle2Icon,
-  CircleDotIcon,
-  CircleIcon,
   LoaderIcon,
   MessageSquareIcon,
   PlayIcon,
   RefreshCwIcon,
-  SearchIcon,
   SquareCheckBigIcon,
   UnlinkIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
+import { WorkspacePageContainer } from "../components/WorkspacePageContainer";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
-import { Badge } from "../components/ui/badge";
+import { WorkspaceSearchInput } from "../components/WorkspaceSearchInput";
+import { formatJiraRelativeDate, JiraStatusIcon } from "../components/jira/JiraIssuePresentation";
+import { JiraIssueRow } from "../components/jira/JiraIssueRow";
+import { JiraWorkspaceFilters, JIRA_VIEWS } from "../components/jira/JiraWorkspaceFilters";
+import {
+  JiraIssueDetailGhost,
+  JiraIssueListEmptyState,
+  JiraIssueListGhost,
+  JiraUnavailableState,
+} from "../components/jira/JiraWorkspaceStates";
 import { Button } from "../components/ui/button";
 import {
   Dialog,
@@ -37,20 +43,28 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../components/ui/dialog";
-import { Input } from "../components/ui/input";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 import { SidebarInset } from "../components/ui/sidebar";
 import { Textarea } from "../components/ui/textarea";
 import { toastManager } from "../components/ui/toast";
-import { useDebouncedValue } from "../state/queries";
-import { useEnvironments } from "../state/environments";
-import { useProjects, useThreadShells } from "../state/entities";
-import { jiraEnvironment } from "../state/jira";
-import { threadEnvironment } from "../state/threads";
-import { useEnvironmentQuery } from "../state/query";
-import { useAtomCommand } from "../state/use-atom-command";
+import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { buildJiraStarterPrompt, normalizeJiraSite } from "../jiraSession";
 import { jiraTransitionStatusOptions } from "../jiraStatusOptions";
+import { jiraIssueFacets } from "../jiraWorkspace";
+import { useEnvironments } from "../state/environments";
+import { useProjects, useThreadShells } from "../state/entities";
+import { jiraEnvironment } from "../state/jira";
+import { useEnvironmentQuery } from "../state/query";
+import { useDebouncedValue } from "../state/queries";
+import { useAtomCommand } from "../state/use-atom-command";
+import { threadEnvironment } from "../state/threads";
 import { cn } from "~/lib/utils";
 
 export interface JiraSearch {
@@ -59,26 +73,42 @@ export interface JiraSearch {
   readonly q?: string;
   readonly mode?: "search" | "jql";
   readonly view?: JiraIssueView;
+  readonly project?: string;
+  readonly status?: JiraIssueStatusCategory;
+  readonly issueType?: string;
 }
 
-const VIEWS = [
-  ["my-work", "My work"],
-  ["assigned", "Assigned"],
-  ["reported", "Reported"],
-  ["watching", "Watching"],
-  ["all", "All"],
-] as const satisfies ReadonlyArray<readonly [JiraIssueView, string]>;
+const STATUS_CATEGORIES: ReadonlyArray<JiraIssueStatusCategory> = ["todo", "in-progress", "done"];
+const CHOOSE_STATUS_VALUE = "__choose_status__";
+
+function optionalSearchString(value: unknown, limit: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, limit) : undefined;
+}
 
 export const Route = createFileRoute("/_chat/jira")({
-  validateSearch: (raw: Record<string, unknown>): JiraSearch => ({
-    ...(typeof raw.environmentId === "string" && raw.environmentId
-      ? { environmentId: raw.environmentId as EnvironmentId }
-      : {}),
-    ...(typeof raw.key === "string" && raw.key ? { key: raw.key.slice(0, 100) } : {}),
-    ...(typeof raw.q === "string" && raw.q ? { q: raw.q.slice(0, 2_000) } : {}),
-    ...(raw.mode === "jql" ? { mode: "jql" as const } : {}),
-    ...(VIEWS.some(([value]) => value === raw.view) ? { view: raw.view as JiraIssueView } : {}),
-  }),
+  validateSearch: (raw: Record<string, unknown>): JiraSearch => {
+    const key = optionalSearchString(raw.key, 100);
+    const project = optionalSearchString(raw.project, 50);
+    const issueType = optionalSearchString(raw.issueType, 100);
+    return {
+      ...(typeof raw.environmentId === "string" && raw.environmentId
+        ? { environmentId: raw.environmentId as EnvironmentId }
+        : {}),
+      ...(key ? { key } : {}),
+      ...(typeof raw.q === "string" && raw.q ? { q: raw.q.slice(0, 2_000) } : {}),
+      ...(raw.mode === "jql" ? { mode: "jql" as const } : {}),
+      ...(JIRA_VIEWS.some(([value]) => value === raw.view)
+        ? { view: raw.view as JiraIssueView }
+        : {}),
+      ...(project ? { project: project.toUpperCase() } : {}),
+      ...(STATUS_CATEGORIES.some((value) => value === raw.status)
+        ? { status: raw.status as JiraIssueStatusCategory }
+        : {}),
+      ...(issueType ? { issueType } : {}),
+    };
+  },
   component: JiraWorkspace,
 });
 
@@ -100,40 +130,63 @@ function JiraWorkspace() {
   const environmentId = selectedEnvironment?.environmentId ?? null;
   const mode = search.mode ?? "search";
   const view = search.view ?? "my-work";
-  const [query, setQuery] = useState(search.q ?? "");
-  const [project, setProject] = useState("");
-  const [status, setStatus] = useState<JiraIssueStatusCategory | "">("");
-  const [issueType, setIssueType] = useState("");
+  const query = search.q ?? "";
   const projects = useProjects();
   const threadShells = useThreadShells();
   const debouncedQuery = useDebouncedValue(query, 250);
 
+  const updateSearch = useCallback(
+    (patch: { readonly [Key in keyof JiraSearch]?: JiraSearch[Key] | undefined }) => {
+      void navigate({
+        search: (previous) => {
+          const next = { ...previous, ...patch } as Record<string, unknown>;
+          for (const [key, value] of Object.entries(next)) {
+            if (value === undefined) delete next[key];
+          }
+          return next as JiraSearch;
+        },
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
   const connection = useEnvironmentQuery(
     environmentId === null ? null : jiraEnvironment.connectionStatus({ environmentId, input: {} }),
   );
+  const canLoad = environmentId !== null && connection.data?.state === "ready";
   const listInput = useMemo(
     (): JiraIssueListInput => ({
       view,
       ...(mode === "jql"
         ? { jql: debouncedQuery || undefined }
         : { query: debouncedQuery || undefined }),
-      ...(project.trim() ? { projectKeys: [project.trim().toUpperCase()] } : {}),
-      ...(status ? { statusCategories: [status] } : {}),
-      ...(issueType.trim() ? { issueTypes: [issueType.trim()] } : {}),
+      ...(search.project ? { projectKeys: [search.project] } : {}),
+      ...(search.status ? { statusCategories: [search.status] } : {}),
+      ...(search.issueType ? { issueTypes: [search.issueType] } : {}),
       limit: 50,
     }),
-    [debouncedQuery, issueType, mode, project, status, view],
+    [debouncedQuery, mode, search.issueType, search.project, search.status, view],
   );
   const issues = useEnvironmentQuery(
-    environmentId === null || connection.data?.state !== "ready"
-      ? null
-      : jiraEnvironment.list({ environmentId, input: listInput }),
+    canLoad && environmentId !== null
+      ? jiraEnvironment.list({ environmentId, input: listInput })
+      : null,
+  );
+  const facetIssues = useEnvironmentQuery(
+    canLoad && environmentId !== null && mode === "search"
+      ? jiraEnvironment.list({ environmentId, input: { view, limit: 50 } })
+      : null,
+  );
+  const facets = useMemo(
+    () => jiraIssueFacets(facetIssues.data?.issues ?? issues.data?.issues ?? []),
+    [facetIssues.data?.issues, issues.data?.issues],
   );
   const selectedKey = search.key ?? issues.data?.issues[0]?.key ?? null;
   const detail = useEnvironmentQuery(
-    environmentId === null || selectedKey === null || connection.data?.state !== "ready"
-      ? null
-      : jiraEnvironment.detail({ environmentId, input: { key: selectedKey } }),
+    canLoad && environmentId !== null && selectedKey !== null
+      ? jiraEnvironment.detail({ environmentId, input: { key: selectedKey } })
+      : null,
   );
   const selectedSite = normalizeJiraSite(connection.data?.site ?? detail.data?.url ?? null);
   const environmentProjects = useMemo(
@@ -156,28 +209,36 @@ function JiraWorkspace() {
     () =>
       detail.data === null
         ? []
-        : jiraTransitionStatusOptions(issues.data?.issues ?? [], detail.data),
-    [detail.data, issues.data?.issues],
+        : jiraTransitionStatusOptions(
+            facetIssues.data?.issues ?? issues.data?.issues ?? [],
+            detail.data,
+          ),
+    [detail.data, facetIssues.data?.issues, issues.data?.issues],
   );
-
-  function updateSearch(patch: {
-    readonly [Key in keyof JiraSearch]?: JiraSearch[Key] | undefined;
-  }) {
-    void navigate({
-      search: (previous) => {
-        const next = { ...previous, ...patch } as Record<string, unknown>;
-        for (const [key, value] of Object.entries(next)) {
-          if (value === undefined) delete next[key];
-        }
-        return next as JiraSearch;
-      },
-      replace: true,
-    });
-  }
+  const selectIssue = useCallback((key: string) => updateSearch({ key }), [updateSearch]);
+  const clearSearch = useCallback(
+    () =>
+      updateSearch({
+        key: undefined,
+        q: undefined,
+        view: "my-work",
+        project: undefined,
+        status: undefined,
+        issueType: undefined,
+      }),
+    [updateSearch],
+  );
 
   if (isReady && capableEnvironments.length === 0) {
     return <JiraUnavailable />;
   }
+
+  const refresh = () => {
+    connection.refresh();
+    issues.refresh();
+    facetIssues.refresh();
+    detail.refresh();
+  };
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden">
@@ -185,34 +246,43 @@ function JiraWorkspace() {
         <SquareCheckBigIcon className="size-4 text-muted-foreground" />
         <h1 className="text-sm font-semibold">Jira</h1>
         <div className="ml-auto flex min-w-0 items-center gap-2">
+          {connection.data?.site ? (
+            <span className="hidden max-w-52 truncate text-xs text-muted-foreground sm:block">
+              {connection.data.site}
+            </span>
+          ) : null}
           {capableEnvironments.length > 1 ? (
-            <select
-              aria-label="Jira environment"
-              className="h-8 max-w-44 rounded-md border border-input bg-background px-2 text-sm"
-              onChange={(event) =>
-                updateSearch({ environmentId: event.target.value as EnvironmentId, key: undefined })
+            <Select
+              value={environmentId ?? undefined}
+              onValueChange={(value) =>
+                value && updateSearch({ environmentId: value as EnvironmentId, key: undefined })
               }
-              value={environmentId ?? ""}
             >
-              {capableEnvironments.map((environment) => (
-                <option key={environment.environmentId} value={environment.environmentId}>
-                  {environment.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger
+                aria-label="Jira environment"
+                className="w-auto max-w-44 min-w-0"
+                size="compact"
+                variant="ghost"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {capableEnvironments.map((environment) => (
+                  <SelectItem key={environment.environmentId} value={environment.environmentId}>
+                    {environment.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           ) : null}
           <Button
             aria-label="Refresh Jira"
             disabled={issues.isPending}
-            onClick={() => {
-              connection.refresh();
-              issues.refresh();
-              detail.refresh();
-            }}
-            size="icon"
+            onClick={refresh}
+            size="icon-sm"
             variant="ghost"
           >
-            <RefreshCwIcon className={cn("size-4", issues.isPending && "animate-spin")} />
+            <RefreshCwIcon className={cn("size-3.5", issues.isPending && "animate-spin")} />
           </Button>
         </div>
       </WorkspacePageHeader>
@@ -220,108 +290,83 @@ function JiraWorkspace() {
       {connection.data?.state && connection.data.state !== "ready" ? (
         <JiraSetupState state={connection.data.state} detail={connection.data.detail} />
       ) : (
-        <main className="flex min-h-0 flex-1 flex-col">
-          <div className="flex flex-col gap-3 border-b p-3 sm:p-4">
-            <div className="flex flex-wrap items-center gap-1">
-              {mode === "search" ? (
-                VIEWS.map(([value, label]) => (
-                  <Button
-                    key={value}
-                    onClick={() => updateSearch({ view: value, key: undefined })}
-                    size="sm"
-                    variant={view === value ? "secondary" : "ghost"}
-                  >
-                    {label}
-                  </Button>
-                ))
-              ) : (
-                <span className="px-2 text-sm font-medium">JQL query</span>
-              )}
-              {connection.data?.site ? (
-                <span className="ml-auto truncate text-xs text-muted-foreground">
-                  {connection.data.site}
-                </span>
-              ) : null}
-            </div>
-            <div className="flex flex-col gap-2 lg:flex-row">
-              <div className="relative min-w-0 flex-1">
-                <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  aria-label={mode === "jql" ? "JQL query" : "Search Jira issues"}
-                  className="pl-9"
-                  onBlur={() => updateSearch({ q: query || undefined })}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder={
-                    mode === "jql" ? "project = APP ORDER BY updated DESC" : "Search key or text"
-                  }
-                  value={query}
-                />
-              </div>
-              <Button
-                onClick={() => updateSearch({ mode: mode === "jql" ? "search" : "jql" })}
-                size="sm"
-                variant="outline"
-              >
-                {mode === "jql" ? "JQL" : "Search"}
-              </Button>
-              {mode === "search" ? (
-                <>
-                  <Input
-                    aria-label="Filter by project key"
-                    className="lg:w-32"
-                    onChange={(event) => setProject(event.target.value)}
-                    placeholder="Project"
-                    value={project}
-                  />
-                  <select
-                    aria-label="Filter by status"
-                    className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                    onChange={(event) =>
-                      setStatus(event.target.value as JiraIssueStatusCategory | "")
+        <main className="min-h-0 flex-1">
+          <WorkspacePageContainer className="h-full min-h-0 gap-3 pt-4 pb-4" width="expanded">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+              <WorkspaceSearchInput
+                ariaLabel={mode === "jql" ? "JQL query" : "Search Jira issues"}
+                busy={issues.isPending && Boolean(issues.data)}
+                onChange={(value) => updateSearch({ q: value || undefined, key: undefined })}
+                placeholder={
+                  mode === "jql" ? "project = APP ORDER BY updated DESC" : "Search key or text"
+                }
+                value={query}
+              />
+              <div className="flex shrink-0 items-center gap-2">
+                <ToggleGroup
+                  aria-label="Jira search language"
+                  variant="segmented"
+                  value={[mode]}
+                  onValueChange={(values) => {
+                    const next = values[0];
+                    if (next === "search" || next === "jql") {
+                      updateSearch({ mode: next === "jql" ? "jql" : undefined, key: undefined });
                     }
-                    value={status}
-                  >
-                    <option value="">Any status</option>
-                    <option value="todo">To do</option>
-                    <option value="in-progress">In progress</option>
-                    <option value="done">Done</option>
-                  </select>
-                  <Input
-                    aria-label="Filter by issue type"
-                    className="lg:w-36"
-                    onChange={(event) => setIssueType(event.target.value)}
-                    placeholder="Issue type"
-                    value={issueType}
+                  }}
+                >
+                  <Toggle value="search">Search</Toggle>
+                  <Toggle value="jql">JQL</Toggle>
+                </ToggleGroup>
+                {mode === "search" ? (
+                  <JiraWorkspaceFilters
+                    issueType={search.issueType}
+                    issueTypes={facets.issueTypes}
+                    onClear={clearSearch}
+                    onIssueTypeChange={(issueType) => updateSearch({ issueType, key: undefined })}
+                    onProjectChange={(project) => updateSearch({ project, key: undefined })}
+                    onStatusChange={(status) => updateSearch({ status, key: undefined })}
+                    onViewChange={(nextView) => updateSearch({ view: nextView, key: undefined })}
+                    project={search.project}
+                    projects={facets.projects}
+                    status={search.status}
+                    view={view}
                   />
-                </>
-              ) : null}
+                ) : null}
+              </div>
             </div>
-          </div>
 
-          <div className="grid min-h-0 flex-1 grid-rows-[minmax(16rem,2fr)_minmax(20rem,3fr)] md:grid-cols-[minmax(18rem,2fr)_minmax(24rem,3fr)] md:grid-rows-1">
-            <IssueList
-              error={issues.error}
-              isPending={issues.isPending}
-              issues={issues.data?.issues ?? []}
-              onSelect={(key) => updateSearch({ key })}
-              selectedKey={selectedKey}
-            />
-            <IssueDetail
-              detail={detail.data}
-              environmentId={environmentId}
-              error={detail.error}
-              isPending={detail.isPending}
-              key={selectedKey ?? "empty"}
-              linkedThreads={linkedThreads}
-              onChanged={() => {
-                issues.refresh();
-                detail.refresh();
-              }}
-              projects={environmentProjects}
-              site={selectedSite}
-              statusOptions={transitionStatusOptions}
-            />
-          </div>
+            <div className="grid min-h-0 flex-1 grid-rows-[minmax(16rem,2fr)_minmax(20rem,3fr)] overflow-hidden rounded-xl border bg-background md:grid-cols-[minmax(18rem,2fr)_minmax(24rem,3fr)] md:grid-rows-1">
+              <IssueList
+                error={issues.error}
+                filtered={
+                  view !== "my-work" || Boolean(search.project || search.status || search.issueType)
+                }
+                isPending={issues.isPending || connection.isPending}
+                issues={issues.data?.issues ?? []}
+                onClear={clearSearch}
+                onRefresh={refresh}
+                onSelect={selectIssue}
+                query={query}
+                selectedKey={selectedKey}
+              />
+              <IssueDetail
+                detail={detail.data}
+                environmentId={environmentId}
+                error={detail.error}
+                isPending={detail.isPending}
+                key={selectedKey ?? "empty"}
+                linkedThreads={linkedThreads}
+                onChanged={() => {
+                  issues.refresh();
+                  facetIssues.refresh();
+                  detail.refresh();
+                }}
+                projects={environmentProjects}
+                site={selectedSite}
+                statusOptions={transitionStatusOptions}
+              />
+            </div>
+          </WorkspacePageContainer>
         </main>
       )}
     </SidebarInset>
@@ -335,14 +380,10 @@ function JiraUnavailable() {
         <SquareCheckBigIcon className="size-4 text-muted-foreground" />
         <h1 className="text-sm font-semibold">Jira</h1>
       </WorkspacePageHeader>
-      <div className="grid flex-1 place-items-center p-6 text-center">
-        <div className="max-w-md space-y-2">
-          <h2 className="font-semibold">Jira is not available on a connected environment</h2>
-          <p className="text-sm text-muted-foreground">
-            Update and reconnect the environment that should run Atlassian CLI.
-          </p>
-        </div>
-      </div>
+      <JiraUnavailableState
+        description="Update and reconnect the environment that should run Atlassian CLI."
+        title="Jira is not available on a connected environment"
+      />
     </SidebarInset>
   );
 }
@@ -385,54 +426,61 @@ function IssueList({
   selectedKey,
   isPending,
   error,
+  query,
+  filtered,
   onSelect,
+  onClear,
+  onRefresh,
 }: {
   readonly issues: ReadonlyArray<JiraIssueSummary>;
   readonly selectedKey: string | null;
   readonly isPending: boolean;
   readonly error: string | null;
+  readonly query: string;
+  readonly filtered: boolean;
   readonly onSelect: (key: string) => void;
+  readonly onClear: () => void;
+  readonly onRefresh: () => void;
 }) {
   return (
-    <section className="min-h-0 overflow-y-auto border-b md:border-r md:border-b-0">
+    <section className="min-h-0 overflow-y-auto border-b p-2 md:border-r md:border-b-0">
       {isPending && issues.length === 0 ? (
-        <div className="flex items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
-          <LoaderIcon className="size-4 animate-spin" /> Loading issues
-        </div>
-      ) : error ? (
-        <p className="p-6 text-sm text-destructive">{error}</p>
+        <JiraIssueListGhost />
+      ) : error && issues.length === 0 ? (
+        <JiraUnavailableState
+          description={error}
+          onRetry={onRefresh}
+          title="Could not load issues"
+        />
       ) : issues.length === 0 ? (
-        <p className="p-10 text-center text-sm text-muted-foreground">No issues match this view.</p>
+        <JiraIssueListEmptyState
+          filtered={filtered}
+          onClear={onClear}
+          onRefresh={onRefresh}
+          query={query}
+          refreshing={isPending}
+        />
       ) : (
-        <div role="list">
-          {issues.map((issue) => (
-            <button
-              className={cn(
-                "flex w-full gap-3 border-b p-4 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                selectedKey === issue.key && "bg-muted/60",
-              )}
-              key={issue.key}
-              onClick={() => onSelect(issue.key)}
-              type="button"
-            >
-              <StatusIcon category={issue.status.category} className="mt-0.5 size-4 shrink-0" />
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">{issue.key}</span>
-                  <span className="truncate">{issue.projectName}</span>
-                  <span className="ml-auto shrink-0">{relativeDate(issue.updatedAt)}</span>
-                </span>
-                <span className="mt-1 block text-sm font-medium">{issue.summary}</span>
-                <span className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                  <Badge size="sm" variant="secondary">
-                    {issue.status.name}
-                  </Badge>
-                  <span className="truncate">{issue.assignee?.displayName ?? "Unassigned"}</span>
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
+        <>
+          {error ? (
+            <div className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <span className="truncate">Could not refresh: {error}</span>
+              <Button onClick={onRefresh} size="xs" variant="ghost">
+                Retry
+              </Button>
+            </div>
+          ) : null}
+          <div className="space-y-0.5" role="list">
+            {issues.map((issue) => (
+              <JiraIssueRow
+                issue={issue}
+                key={issue.key}
+                onSelect={onSelect}
+                selected={selectedKey === issue.key}
+              />
+            ))}
+          </div>
+        </>
       )}
     </section>
   );
@@ -471,16 +519,17 @@ function IssueDetail({
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [startSessionOpen, setStartSessionOpen] = useState(false);
 
-  if (isPending && detail === null) {
-    return (
-      <div className="flex items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
-        <LoaderIcon className="size-4 animate-spin" /> Loading issue
-      </div>
-    );
+  if (isPending && detail === null) return <JiraIssueDetailGhost />;
+  if (error && detail === null) {
+    return <JiraUnavailableState description={error} title="Could not load this issue" />;
   }
-  if (error) return <p className="p-6 text-sm text-destructive">{error}</p>;
   if (detail === null || environmentId === null) {
-    return <p className="p-10 text-center text-sm text-muted-foreground">Select an issue.</p>;
+    return (
+      <JiraUnavailableState
+        description="Choose an issue from the list to see its description, activity, and actions."
+        title="Select an issue"
+      />
+    );
   }
   const issue = detail;
   const targetEnvironmentId = environmentId;
@@ -505,15 +554,16 @@ function IssueDetail({
   async function changeStatus() {
     if (!nextStatus.trim()) return;
     setIsTransitioning(true);
+    const targetStatus = nextStatus.trim();
     const result = await transition({
       environmentId: targetEnvironmentId,
-      input: { key: issue.key, status: nextStatus.trim() },
+      input: { key: issue.key, status: targetStatus },
     });
     setIsTransitioning(false);
     if (result._tag === "Success") {
       setNextStatus("");
       onChanged();
-      toastManager.add({ type: "success", title: `${issue.key} moved to ${nextStatus.trim()}` });
+      toastManager.add({ type: "success", title: `${issue.key} moved to ${targetStatus}` });
     } else {
       toastManager.add({ type: "error", title: `Could not transition ${issue.key}` });
     }
@@ -575,14 +625,14 @@ function IssueDetail({
             No T3 Code sessions are linked to this ticket.
           </p>
         ) : (
-          <div className="mt-2 space-y-2">
+          <div className="mt-2 space-y-1">
             {linkedThreads.map((thread) => (
               <div
-                className="flex items-start rounded-lg border hover:bg-muted/40"
+                className="group flex items-center rounded-lg border border-transparent transition-colors hover:bg-accent/60"
                 key={`${thread.environmentId}:${thread.id}`}
               >
                 <button
-                  className="flex min-w-0 flex-1 items-start gap-3 p-3 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   onClick={() =>
                     void navigate({
                       to: "/$environmentId/$threadId",
@@ -591,24 +641,26 @@ function IssueDetail({
                   }
                   type="button"
                 >
-                  <StatusIcon
+                  <JiraStatusIcon
                     category={thread.latestTurn?.state === "running" ? "in-progress" : "todo"}
-                    className="mt-0.5 size-4 shrink-0"
+                    className="size-4 shrink-0"
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{thread.title}</span>
-                    <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                      <span>{thread.latestTurn?.state === "running" ? "Running" : "Session"}</span>
-                      {thread.branch ? <span>{thread.branch}</span> : null}
+                    <span className="mt-0.5 flex min-w-0 gap-2 text-xs text-muted-foreground">
+                      <span className="shrink-0">
+                        {thread.latestTurn?.state === "running" ? "Running" : "Session"}
+                      </span>
+                      {thread.branch ? <span className="truncate">{thread.branch}</span> : null}
                       {thread.linkedPullRequest ? (
-                        <span>PR #{thread.linkedPullRequest.number}</span>
+                        <span className="shrink-0">PR #{thread.linkedPullRequest.number}</span>
                       ) : null}
                     </span>
                   </span>
                 </button>
                 <Button
                   aria-label={`Unlink ${thread.title} from ${issue.key}`}
-                  className="m-2 shrink-0"
+                  className="mr-2 shrink-0 opacity-70 group-hover:opacity-100"
                   onClick={() => void unlinkSession(thread.id)}
                   size="icon-xs"
                   variant="ghost"
@@ -624,19 +676,27 @@ function IssueDetail({
       <section className="mt-6">
         <h3 className="text-sm font-semibold">Transition</h3>
         <div className="mt-2 flex gap-2">
-          <select
-            aria-label="Destination Jira status"
-            className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(event) => setNextStatus(event.target.value)}
-            value={nextStatus}
+          <Select
+            value={nextStatus || CHOOSE_STATUS_VALUE}
+            onValueChange={(value) =>
+              setNextStatus(value === CHOOSE_STATUS_VALUE ? "" : (value ?? ""))
+            }
           >
-            <option value="">Choose a status</option>
-            {statusOptions.map((statusOption) => (
-              <option key={statusOption} value={statusOption}>
-                {statusOption}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger aria-label="Destination Jira status" className="min-w-0 flex-1">
+              <SelectValue>
+                {nextStatus ||
+                  (statusOptions.length === 0 ? "No other statuses loaded" : "Choose a status")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value={CHOOSE_STATUS_VALUE}>Choose a status</SelectItem>
+              {statusOptions.map((statusOption) => (
+                <SelectItem key={statusOption} value={statusOption}>
+                  {statusOption}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
           <Button
             disabled={isTransitioning || !nextStatus.trim()}
             onClick={() => void changeStatus()}
@@ -664,7 +724,7 @@ function IssueDetail({
                 <span className="font-medium text-foreground">
                   {entry.author?.displayName ?? "Unknown"}
                 </span>
-                <span>{relativeDate(entry.createdAt)}</span>
+                <span>{formatJiraRelativeDate(entry.createdAt)}</span>
               </div>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{entry.body}</p>
             </div>
@@ -735,7 +795,6 @@ function StartJiraSessionDialog({
     if (result === null) {
       setIsStarting(false);
       toastManager.add({ type: "error", title: `Could not start a session for ${issue.key}` });
-      return;
     }
   }
 
@@ -751,18 +810,21 @@ function StartJiraSessionDialog({
         <DialogPanel className="space-y-4">
           <label className="block space-y-1.5 text-sm">
             <span className="font-medium">Project</span>
-            <select
-              aria-label="Project for Jira session"
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              onChange={(event) => setProjectId(event.target.value as ProjectId)}
-              value={projectId}
+            <Select
+              value={projectId || undefined}
+              onValueChange={(value) => value && setProjectId(value as ProjectId)}
             >
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.title}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger aria-label="Project for Jira session">
+                <SelectValue placeholder="Choose a project" />
+              </SelectTrigger>
+              <SelectPopup>
+                {projects.map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    {project.title}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           </label>
           <label className="block space-y-1.5 text-sm">
             <span className="font-medium">Starter prompt</span>
@@ -799,35 +861,4 @@ function DetailField({ label, value }: { readonly label: string; readonly value:
       <p className="mt-0.5 font-medium">{value}</p>
     </div>
   );
-}
-
-function StatusIcon({
-  category,
-  className,
-}: {
-  readonly category: JiraIssueStatusCategory;
-  readonly className?: string;
-}) {
-  switch (category) {
-    case "done":
-      return <CheckCircle2Icon className={cn("text-emerald-500", className)} />;
-    case "in-progress":
-      return <CircleDotIcon className={cn("text-blue-500", className)} />;
-    case "todo":
-      return <CircleIcon className={cn("text-muted-foreground", className)} />;
-    case "unknown":
-      return <SquareCheckBigIcon className={cn("text-muted-foreground", className)} />;
-  }
-}
-
-function relativeDate(value: string | null): string {
-  if (!value) return "";
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return "";
-  const elapsed = Date.now() - timestamp;
-  const minutes = Math.round(elapsed / 60_000);
-  if (Math.abs(minutes) < 60) return `${Math.max(1, Math.abs(minutes))}m`;
-  const hours = Math.round(minutes / 60);
-  if (Math.abs(hours) < 24) return `${Math.abs(hours)}h`;
-  return `${Math.abs(Math.round(hours / 24))}d`;
 }
