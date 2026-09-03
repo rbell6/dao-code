@@ -32,6 +32,7 @@ import { useEnvironments } from "../state/environments";
 import { jiraEnvironment } from "../state/jira";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
+import { jiraTransitionStatusOptions } from "../jiraStatusOptions";
 import { cn } from "~/lib/utils";
 
 export interface JiraSearch {
@@ -113,6 +114,13 @@ function JiraWorkspace() {
     environmentId === null || selectedKey === null || connection.data?.state !== "ready"
       ? null
       : jiraEnvironment.detail({ environmentId, input: { key: selectedKey } }),
+  );
+  const transitionStatusOptions = useMemo(
+    () =>
+      detail.data === null
+        ? []
+        : jiraTransitionStatusOptions(issues.data?.issues ?? [], detail.data),
+    [detail.data, issues.data?.issues],
   );
 
   function updateSearch(patch: {
@@ -266,10 +274,12 @@ function JiraWorkspace() {
               environmentId={environmentId}
               error={detail.error}
               isPending={detail.isPending}
+              key={selectedKey ?? "empty"}
               onChanged={() => {
                 issues.refresh();
                 detail.refresh();
               }}
+              statusOptions={transitionStatusOptions}
             />
           </div>
         </main>
@@ -394,12 +404,14 @@ function IssueDetail({
   isPending,
   error,
   onChanged,
+  statusOptions,
 }: {
   readonly detail: JiraIssueDetail | null;
   readonly environmentId: EnvironmentId | null;
   readonly isPending: boolean;
   readonly error: string | null;
   readonly onChanged: () => void;
+  readonly statusOptions: ReadonlyArray<string>;
 }) {
   const comment = useAtomCommand(jiraEnvironment.comment, { reportFailure: false });
   const transition = useAtomCommand(jiraEnvironment.transition, { reportFailure: false });
@@ -487,12 +499,19 @@ function IssueDetail({
       <section className="mt-6">
         <h3 className="text-sm font-semibold">Transition</h3>
         <div className="mt-2 flex gap-2">
-          <Input
+          <select
             aria-label="Destination Jira status"
+            className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
             onChange={(event) => setNextStatus(event.target.value)}
-            placeholder="Status name, for example In Progress"
             value={nextStatus}
-          />
+          >
+            <option value="">Choose a status</option>
+            {statusOptions.map((statusOption) => (
+              <option key={statusOption} value={statusOption}>
+                {statusOption}
+              </option>
+            ))}
+          </select>
           <Button
             disabled={isTransitioning || !nextStatus.trim()}
             onClick={() => void changeStatus()}
