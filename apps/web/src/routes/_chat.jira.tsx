@@ -50,6 +50,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { buildJiraStarterPrompt, normalizeJiraSite } from "../jiraSession";
+import { jiraTransitionStatusOptions } from "../jiraStatusOptions";
 import { cn } from "~/lib/utils";
 
 export interface JiraSearch {
@@ -150,6 +151,13 @@ function JiraWorkspace() {
               thread.linkedJiraIssue.key.toLowerCase() === selectedKey.toLowerCase(),
           ),
     [environmentId, selectedKey, selectedSite, threadShells],
+  );
+  const transitionStatusOptions = useMemo(
+    () =>
+      detail.data === null
+        ? []
+        : jiraTransitionStatusOptions(issues.data?.issues ?? [], detail.data),
+    [detail.data, issues.data?.issues],
   );
 
   function updateSearch(patch: {
@@ -303,6 +311,7 @@ function JiraWorkspace() {
               environmentId={environmentId}
               error={detail.error}
               isPending={detail.isPending}
+              key={selectedKey ?? "empty"}
               linkedThreads={linkedThreads}
               onChanged={() => {
                 issues.refresh();
@@ -310,6 +319,7 @@ function JiraWorkspace() {
               }}
               projects={environmentProjects}
               site={selectedSite}
+              statusOptions={transitionStatusOptions}
             />
           </div>
         </main>
@@ -437,6 +447,7 @@ function IssueDetail({
   onChanged,
   projects,
   site,
+  statusOptions,
 }: {
   readonly detail: JiraIssueDetail | null;
   readonly environmentId: EnvironmentId | null;
@@ -446,6 +457,7 @@ function IssueDetail({
   readonly onChanged: () => void;
   readonly projects: ReturnType<typeof useProjects>;
   readonly site: string | null;
+  readonly statusOptions: ReadonlyArray<string>;
 }) {
   const navigate = useNavigate();
   const comment = useAtomCommand(jiraEnvironment.comment, { reportFailure: false });
@@ -612,12 +624,19 @@ function IssueDetail({
       <section className="mt-6">
         <h3 className="text-sm font-semibold">Transition</h3>
         <div className="mt-2 flex gap-2">
-          <Input
+          <select
             aria-label="Destination Jira status"
+            className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
             onChange={(event) => setNextStatus(event.target.value)}
-            placeholder="Status name, for example In Progress"
             value={nextStatus}
-          />
+          >
+            <option value="">Choose a status</option>
+            {statusOptions.map((statusOption) => (
+              <option key={statusOption} value={statusOption}>
+                {statusOption}
+              </option>
+            ))}
+          </select>
           <Button
             disabled={isTransitioning || !nextStatus.trim()}
             onClick={() => void changeStatus()}
