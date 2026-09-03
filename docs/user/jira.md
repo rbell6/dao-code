@@ -26,6 +26,9 @@ The default **My work** view includes issues you are assigned, reported, or watc
 views to narrow that relationship, search by issue key or text, and filter by project, status
 category, or issue type.
 
+Selecting an issue opens it in a resizable detail panel. Open more issues to keep them as tabs;
+closing a tab returns to the previous issue, while the list search and filters stay in place.
+
 Select **Search** to switch the input to **JQL**. JQL is sent as written, so it can express saved
 queries that the standard controls cannot. Results are limited to 50 issues and sorted by recent
 updates unless the JQL supplies its own order.
