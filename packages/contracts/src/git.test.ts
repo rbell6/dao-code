@@ -125,6 +125,19 @@ describe("GitRunStackedActionInput", () => {
     expect(parsed.actionId).toBe("action-1");
     expect(parsed.action).toBe("create_pr");
   });
+
+  it("accepts work references for generated pull request content", () => {
+    const parsed = decodeRunStackedActionInput({
+      actionId: "action-1",
+      cwd: "/repo",
+      action: "create_pr",
+      references: [{ key: "IA-1234", url: "https://example.atlassian.net/browse/IA-1234" }],
+    });
+
+    expect(parsed.references).toEqual([
+      { key: "IA-1234", url: "https://example.atlassian.net/browse/IA-1234" },
+    ]);
+  });
 });
 
 describe("GitRunStackedActionResult", () => {

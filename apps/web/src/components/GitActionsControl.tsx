@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { type ScopedThreadRef } from "@t3tools/contracts";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -55,6 +56,7 @@ import {
   resolveLiveThreadBranchUpdate,
   resolveThreadBranchMetadataPatch,
   resolveQuickAction,
+  resolveLinkedPullRequestAfterGitAction,
   resolveThreadBranchUpdate,
 } from "./GitActionsControl.logic";
 import { AnimatedHeight } from "./AnimatedHeight";
@@ -86,7 +88,7 @@ import {
   useVcsInitAction,
   useVcsPullAction,
 } from "~/lib/sourceControlActions";
-import { useThread } from "~/state/entities";
+import { useProject, useThread } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { serverEnvironment } from "~/state/server";
 import { sourceControlEnvironment } from "~/state/sourceControl";
@@ -1014,6 +1016,11 @@ export default function GitActionsControl({
   const activeServerThread = useThread(activeThreadRef, {
     waitForShell: activeDraftThread !== null,
   });
+  const activeProject = useProject(
+    activeThreadRef && activeServerThread
+      ? scopeProjectRef(activeThreadRef.environmentId, activeServerThread.projectId)
+      : null,
+  );
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [dialogCommitMessage, setDialogCommitMessage] = useState("");
@@ -1410,6 +1417,16 @@ export default function GitActionsControl({
         ...(commitMessage ? { commitMessage } : {}),
         ...(featureBranch ? { featureBranch } : {}),
         ...(filePaths ? { filePaths } : {}),
+        ...(activeServerThread?.linkedJiraIssue
+          ? {
+              references: [
+                {
+                  key: activeServerThread.linkedJiraIssue.key,
+                  url: activeServerThread.linkedJiraIssue.url,
+                },
+              ],
+            }
+          : {}),
         onProgress: applyProgressEvent,
       });
 
@@ -1435,6 +1452,25 @@ export default function GitActionsControl({
 
       const actionResult = result.value;
       syncThreadBranchAfterGitAction(actionResult);
+      const linkedPullRequest = activeServerThread
+        ? resolveLinkedPullRequestAfterGitAction({
+            result: actionResult,
+            projectId: activeServerThread.projectId,
+            repository:
+              activeProject?.repositoryIdentity?.displayName ??
+              activeProject?.repositoryIdentity?.canonicalKey ??
+              null,
+          })
+        : null;
+      if (activeThreadRef && linkedPullRequest) {
+        await updateThreadMetadata({
+          environmentId: activeThreadRef.environmentId,
+          input: {
+            threadId: activeThreadRef.threadId,
+            linkedPullRequest,
+          },
+        });
+      }
       const closeResultToast = () => {
         toastManager.close(resolvedProgressToastId);
       };

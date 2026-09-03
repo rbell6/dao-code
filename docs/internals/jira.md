@@ -15,6 +15,17 @@ The boundary has four layers:
 4. `packages/client-runtime/src/state/jira.ts` provides environment-scoped query and command atoms;
    the web workspace renders those atoms.
 
+The durable issue relationship belongs to orchestration rather than the Jira adapter. A thread
+stores a `linkedJiraIssue` reference containing the site, issue key, and browser URL. Thread create
+and metadata-update events carry that reference, and the thread projection persists it as JSON.
+Draft threads carry the same reference until the atomic first-turn bootstrap creates the server
+thread. This attaches the issue to the durable thread, not to a provider session that may restart.
+
+The web client derives the reverse issue-to-threads view from environment thread shells already in
+memory. It does not start an ACLI process per thread row. Creating a pull request passes a small
+list of work references to the source-control writer; the writer adds the primary key to the title
+and missing links to the description without calling Jira.
+
 This keeps Jira behavior remote-ready: the CLI and credentials live with the server, while web and
 desktop clients use the same authenticated WebSocket from any connection mode. The capability is
 optional so newer clients can remain connected to older servers without issuing unsupported RPCs.
