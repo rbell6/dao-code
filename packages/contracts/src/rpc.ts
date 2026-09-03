@@ -120,6 +120,17 @@ import {
   PullRequestUpdateInput,
 } from "./pullRequest.ts";
 import {
+  JiraCommentInput,
+  JiraConnectionStatus,
+  JiraIssueDetail,
+  JiraIssueListInput,
+  JiraIssueListResult,
+  JiraIssueRef,
+  JiraOperationError,
+  JiraTransitionInput,
+  JiraUnavailableError,
+} from "./jira.ts";
+import {
   RelayClientInstallFailedError,
   RelayClientInstallProgressEventSchema,
   RelayClientStatusSchema,
@@ -342,6 +353,13 @@ export const WS_METHODS = {
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
   pullRequestsLabelCandidates: "pullRequests.labelCandidates",
   pullRequestsSetLabels: "pullRequests.setLabels",
+
+  // Jira methods
+  jiraConnectionStatus: "jira.connectionStatus",
+  jiraList: "jira.list",
+  jiraDetail: "jira.detail",
+  jiraComment: "jira.comment",
+  jiraTransition: "jira.transition",
 
   // Source control methods
   sourceControlLookupRepository: "sourceControl.lookupRepository",
@@ -734,6 +752,42 @@ export const WsPullRequestsSetLabelsRpc = Rpc.make(WS_METHODS.pullRequestsSetLab
   payload: PullRequestLabelChangeInput,
   success: Schema.Void,
   error: PullRequestRpcError,
+});
+
+const JiraRpcError = Schema.Union([
+  JiraUnavailableError,
+  JiraOperationError,
+  EnvironmentAuthorizationError,
+]);
+
+export const WsJiraConnectionStatusRpc = Rpc.make(WS_METHODS.jiraConnectionStatus, {
+  payload: Schema.Struct({}),
+  success: JiraConnectionStatus,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsJiraListRpc = Rpc.make(WS_METHODS.jiraList, {
+  payload: JiraIssueListInput,
+  success: JiraIssueListResult,
+  error: JiraRpcError,
+});
+
+export const WsJiraDetailRpc = Rpc.make(WS_METHODS.jiraDetail, {
+  payload: JiraIssueRef,
+  success: JiraIssueDetail,
+  error: JiraRpcError,
+});
+
+export const WsJiraCommentRpc = Rpc.make(WS_METHODS.jiraComment, {
+  payload: JiraCommentInput,
+  success: Schema.Void,
+  error: JiraRpcError,
+});
+
+export const WsJiraTransitionRpc = Rpc.make(WS_METHODS.jiraTransition, {
+  payload: JiraTransitionInput,
+  success: Schema.Void,
+  error: JiraRpcError,
 });
 
 export const WsSourceControlLookupRepositoryRpc = Rpc.make(
@@ -1205,6 +1259,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsRequestReviewersRpc,
   WsPullRequestsLabelCandidatesRpc,
   WsPullRequestsSetLabelsRpc,
+  WsJiraConnectionStatusRpc,
+  WsJiraListRpc,
+  WsJiraDetailRpc,
+  WsJiraCommentRpc,
+  WsJiraTransitionRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
