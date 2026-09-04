@@ -264,6 +264,7 @@ export function useNewThreadHandler() {
               branch: null,
               worktreePath: null,
               envMode: defaultEnvMode,
+              linkedJiraIssue: null,
               startFromOrigin: resolveNewDraftStartFromOrigin({
                 envMode: defaultEnvMode,
                 newWorktreesStartFromOrigin: primaryServerSettings.newWorktreesStartFromOrigin,

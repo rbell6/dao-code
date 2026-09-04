@@ -151,4 +151,27 @@ describe("useNewThreadHandler", () => {
     expect(testState.router.navigate).not.toHaveBeenCalled();
     expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
   });
+
+  it("clears a stale Jira link when resetting a reused draft's context", async () => {
+    testState.reset({
+      draftId: "draft-existing",
+      environmentId: "environment-ssh",
+      promotedTo: null,
+      threadId: "thread-existing",
+    });
+    testState.draftStore.setDraftThreadContext.mockClear();
+    const openThread = useNewThreadHandler();
+    const pendingOpen = openThread(
+      { environmentId: "environment-ssh", projectId: "project-remote" } as never,
+      { replace: true },
+    );
+
+    testState.completeProjectFileRead(null);
+    await pendingOpen;
+
+    expect(testState.draftStore.setDraftThreadContext).toHaveBeenCalledWith(
+      "draft-existing",
+      expect.objectContaining({ branch: null, worktreePath: null, linkedJiraIssue: null }),
+    );
+  });
 });
