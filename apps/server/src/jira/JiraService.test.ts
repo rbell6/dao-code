@@ -88,6 +88,10 @@ describe("jiraListJql", () => {
           ],
         },
         {
+          operation: "connectionStatus",
+          args: ["jira", "auth", "status"],
+        },
+        {
           operation: "comment",
           args: [
             "jira",
@@ -115,6 +119,33 @@ describe("jiraListJql", () => {
           ],
         },
       ]);
+    }),
+  );
+
+  it.effect("derives issue URLs from the authenticated site and caches the lookup", () =>
+    Effect.gen(function* () {
+      let statusCalls = 0;
+      const cli = JiraCli.JiraCli.of({
+        execute: (operation) =>
+          Effect.sync(() => {
+            if (operation === "connectionStatus") statusCalls += 1;
+            return {
+              stdout:
+                operation === "connectionStatus"
+                  ? "✓ Authenticated\n  Site: example.atlassian.net"
+                  : '[{"key":"APP-42","fields":{"summary":"Test issue"}}]',
+              stderr: "",
+            };
+          }),
+      });
+      const service = yield* JiraService.make.pipe(Effect.provideService(JiraCli.JiraCli, cli));
+
+      const first = yield* service.list({ view: "assigned" });
+      const second = yield* service.list({ view: "assigned" });
+
+      expect(first.issues[0]?.url).toBe("https://example.atlassian.net/browse/APP-42");
+      expect(second.issues[0]?.url).toBe("https://example.atlassian.net/browse/APP-42");
+      expect(statusCalls).toBe(1);
     }),
   );
 });
