@@ -38,7 +38,6 @@ const RawComment = Schema.Struct({
 const RawIssue = Schema.Struct({
   id: Schema.optional(Schema.Union([Schema.String, Schema.NumberFromString, Schema.Number])),
   key: Schema.String,
-  self: Schema.optional(Schema.NullOr(Schema.String)),
   fields: Schema.Struct({
     summary: Schema.String,
     description: Schema.optional(Schema.Unknown),
@@ -145,14 +144,10 @@ function statusCategory(raw: string | null | undefined): JiraIssueStatusCategory
   }
 }
 
-function issueUrl(self: string | null | undefined, key: string): string | null {
-  const raw = trimmed(self);
-  if (raw === null) return null;
-  try {
-    return `${new URL(raw).origin}/browse/${encodeURIComponent(key)}`;
-  } catch {
-    return null;
-  }
+// ACLI issue `self` URLs point at Atlassian's internal shard hosts, which do not
+// serve the browse UI, so browser URLs must come from the authenticated site.
+function issueUrl(site: string | null, key: string): string | null {
+  return site === null ? null : `https://${site}/browse/${encodeURIComponent(key)}`;
 }
 
 function adfText(value: unknown): string {
@@ -174,7 +169,7 @@ function adfText(value: unknown): string {
   }
 }
 
-function summary(raw: RawIssueType): JiraIssueSummary {
+function summary(raw: RawIssueType, site: string | null): JiraIssueSummary {
   const key = raw.key.trim();
   const status = raw.fields.status;
   const issueType = raw.fields.issuetype;
@@ -182,7 +177,7 @@ function summary(raw: RawIssueType): JiraIssueSummary {
   return {
     key,
     summary: raw.fields.summary,
-    url: issueUrl(raw.self, key),
+    url: issueUrl(site, key),
     projectKey: trimmed(raw.fields.project?.key) ?? key.split("-")[0] ?? "",
     projectName: trimmed(raw.fields.project?.name) ?? trimmed(raw.fields.project?.key) ?? "",
     status: {
@@ -229,6 +224,7 @@ function comments(raw: RawIssueType): ReadonlyArray<JiraComment> {
 
 export function decodeJiraIssueListJson(
   input: string,
+  site: string | null,
 ): Result.Result<ReadonlyArray<JiraIssueSummary>, DecodeFailure> {
   const decoded = decodeSearch(input);
   if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
@@ -249,18 +245,19 @@ export function decodeJiraIssueListJson(
   const issues: Array<JiraIssueSummary> = [];
   for (const entry of entries) {
     const issue = decodeIssueEntry(entry);
-    if (Exit.isSuccess(issue) && issue.value.key.trim()) issues.push(summary(issue.value));
+    if (Exit.isSuccess(issue) && issue.value.key.trim()) issues.push(summary(issue.value, site));
   }
   return Result.succeed(issues);
 }
 
 export function decodeJiraIssueDetailJson(
   input: string,
+  site: string | null,
 ): Result.Result<JiraIssueDetail, DecodeFailure> {
   const decoded = decodeIssue(input);
   if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
   return Result.succeed({
-    ...summary(decoded.success),
+    ...summary(decoded.success, site),
     description: adfText(decoded.success.fields.description).trim(),
     comments: comments(decoded.success),
   });

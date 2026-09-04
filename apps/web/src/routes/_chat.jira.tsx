@@ -160,7 +160,7 @@ function JiraWorkspace() {
       view,
       ...(mode === "jql"
         ? { jql: debouncedQuery || undefined }
-        : { query: debouncedQuery || undefined }),
+        : { query: debouncedQuery.slice(0, 200) || undefined }),
       ...(search.project ? { projectKeys: [search.project] } : {}),
       ...(search.status ? { statusCategories: [search.status] } : {}),
       ...(search.issueType ? { issueTypes: [search.issueType] } : {}),
