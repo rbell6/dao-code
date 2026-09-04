@@ -32,6 +32,11 @@ workspace uses a fixed sentinel panel reference and excludes it from persistence
 Pull Requests workspace: tab state survives navigation during the session but a restart opens a
 fresh list.
 
+The same `jira` surface kind opens beside a thread with a linked ticket, offered in the surface
+picker and from the header's ticket chip. The issue detail view is shared: the workspace feeds it
+from its loaded list, while the thread panel (`JiraIssueSurfacePanel`) is self-contained and derives
+transition options from a project-scoped list fetched on demand.
+
 This keeps Jira behavior remote-ready: the CLI and credentials live with the server, while web and
 desktop clients use the same authenticated WebSocket from any connection mode. The capability is
 optional so newer clients can remain connected to older servers without issuing unsupported RPCs.

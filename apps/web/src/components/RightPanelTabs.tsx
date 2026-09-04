@@ -105,12 +105,14 @@ interface RightPanelTabsProps {
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddPullRequest: () => void;
+  onAddJira: () => void;
   onAddAgents: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
+  jiraAvailable: boolean;
   agentsAvailable: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
@@ -140,6 +142,7 @@ const SURFACE_DISABLED_REASONS = {
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
+  jira: "This thread has no linked Jira ticket.",
   agents: "Agents are only available from a thread.",
 } as const;
 
@@ -162,6 +165,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
   files: "Available when a project is open.",
   diff: "Available for Git repositories.",
   pullRequest: "No pull request on this branch yet.",
+  jira: "No Jira ticket linked to this thread.",
   agents: "Available from a thread.",
 } as const;
 
@@ -299,12 +303,14 @@ function RightPanelEmptyState(props: {
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddPullRequest: () => void;
+  onAddJira: () => void;
   onAddAgents: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
+  jiraAvailable: boolean;
   agentsAvailable: boolean;
   liveAgentCount: number;
 }) {
@@ -360,6 +366,16 @@ function RightPanelEmptyState(props: {
       available: props.pullRequestAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
       onClick: props.onAddPullRequest,
+      badgeCount: 0,
+    },
+    {
+      label: "Jira ticket",
+      description: "Open this thread's linked ticket.",
+      icon: SquareCheckBig,
+      shortcut: "J",
+      available: props.jiraAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.jira,
+      onClick: props.onAddJira,
       badgeCount: 0,
     },
     {
@@ -812,6 +828,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddPullRequest,
     },
     {
+      label: "Jira ticket",
+      icon: SquareCheckBig,
+      shortcut: "J",
+      available: props.jiraAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.jira,
+      onClick: props.onAddJira,
+    },
+    {
       label: "Agents",
       icon: Bot,
       shortcut: "A",
@@ -1248,12 +1272,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
+            onAddJira={props.onAddJira}
             onAddAgents={props.onAddAgents}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
+            jiraAvailable={props.jiraAvailable}
             agentsAvailable={props.agentsAvailable}
             liveAgentCount={props.liveAgentCount}
           />

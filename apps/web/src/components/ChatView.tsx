@@ -171,6 +171,7 @@ import {
 } from "../previewMiniPlayerStore";
 import { isThreadOwnPullRequest } from "./pullRequest/pullRequestDetail.logic";
 import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
+import { JiraIssueSurfacePanel } from "./jira/JiraIssueSurfacePanel";
 import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
@@ -2215,6 +2216,7 @@ function ChatViewContent(props: ChatViewProps) {
     : (primaryEnvironment?.serverConfig ?? null);
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
+  const supportsJira = serverConfig?.environment.capabilities.jira === true;
   const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
   const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
   const supportsAttachmentUploads =
@@ -5017,6 +5019,17 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThreadPr, openThreadPullRequest]);
   const pullRequestSurfaceAvailable =
     supportsPullRequests && activeThreadPr !== null && threadRepository !== null;
+  // Same shape as the pull-request surface: only offered once the thread has a
+  // linked ticket, so the picker explains itself instead of opening empty.
+  const activeThreadJiraIssue = activeThread?.linkedJiraIssue ?? null;
+  const addJiraSurface = useCallback(() => {
+    if (activeThreadJiraIssue === null || activeThreadRef === null) return;
+    useRightPanelStore.getState().openJiraIssue(activeThreadRef, {
+      environmentId: activeThreadRef.environmentId,
+      key: activeThreadJiraIssue.key,
+    });
+  }, [activeThreadJiraIssue, activeThreadRef]);
+  const jiraSurfaceAvailable = supportsJira && isServerThread && activeThreadJiraIssue !== null;
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
   const supportsSnooze = serverConfig?.environment.capabilities.threadSnooze === true;
   const supportsPinning = serverConfig?.environment.capabilities.threadPinning === true;
@@ -7504,6 +7517,12 @@ function ChatViewContent(props: ChatViewProps) {
           ? { onStateChange: handlePullRequestTabStatusChange }
           : {})}
       />
+    ) : renderedRightPanelSurface?.kind === "jira" ? (
+      <JiraIssueSurfacePanel
+        key={renderedRightPanelSurface.id}
+        environmentId={renderedRightPanelSurface.environmentId as EnvironmentId}
+        issueKey={renderedRightPanelSurface.key}
+      />
     ) : renderedRightPanelSurface?.kind === "agents" ? (
       <AgentsPanel
         model={agentPanelModel}
@@ -7589,6 +7608,7 @@ function ChatViewContent(props: ChatViewProps) {
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
             activeThreadTitle={activeThread.title}
             linkedJiraIssue={activeThread.linkedJiraIssue}
+            {...(jiraSurfaceAvailable ? { onOpenJiraIssue: addJiraSurface } : {})}
             isServerThread={isServerThread}
             activeProjectName={activeProject?.title}
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
@@ -8028,12 +8048,14 @@ function ChatViewContent(props: ChatViewProps) {
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
+          onAddJira={addJiraSurface}
           onAddAgents={addAgentsSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
+          jiraAvailable={jiraSurfaceAvailable}
           agentsAvailable
           liveAgentCount={agentPanelModel.liveCount}
         >
@@ -8077,12 +8099,14 @@ function ChatViewContent(props: ChatViewProps) {
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
+            onAddJira={addJiraSurface}
             onAddAgents={addAgentsSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
             pullRequestAvailable={pullRequestSurfaceAvailable}
+            jiraAvailable={jiraSurfaceAvailable}
             agentsAvailable
             liveAgentCount={agentPanelModel.liveCount}
           >

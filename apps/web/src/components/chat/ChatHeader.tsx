@@ -68,6 +68,9 @@ interface ChatHeaderProps {
   rightPanelOpen: boolean;
   gitCwd: string | null;
   readonly onOpenPullRequest?: ((number: number) => void) | undefined;
+  /** Opens the linked ticket in the right panel; without it the chip falls
+      back to navigating to the Jira workspace. */
+  readonly onOpenJiraIssue?: (() => void) | undefined;
   onNewThreadInProject: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
@@ -140,6 +143,7 @@ export const ChatHeader = memo(function ChatHeader({
   rightPanelOpen,
   gitCwd,
   onOpenPullRequest,
+  onOpenJiraIssue,
   onNewThreadInProject,
   onRunProjectScript,
   onAddProjectScript,
@@ -354,22 +358,30 @@ export const ChatHeader = memo(function ChatHeader({
                     <button
                       type="button"
                       className="inline-flex items-center gap-1 rounded-sm text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() =>
+                      onClick={() => {
+                        if (onOpenJiraIssue) {
+                          onOpenJiraIssue();
+                          return;
+                        }
                         void navigate({
                           to: "/jira",
                           search: {
                             environmentId: activeThreadEnvironmentId,
                             key: linkedJiraIssue.key,
                           },
-                        })
-                      }
+                        });
+                      }}
                     />
                   }
                 >
                   <SquareCheckBigIcon className="size-3.5" />
                   {linkedJiraIssue.key}
                 </TooltipTrigger>
-                <TooltipPopup side="top">Open {linkedJiraIssue.key} in Jira</TooltipPopup>
+                <TooltipPopup side="top">
+                  {onOpenJiraIssue
+                    ? `Open ${linkedJiraIssue.key}`
+                    : `Open ${linkedJiraIssue.key} in Jira`}
+                </TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
             <WorkspaceBreadcrumbSeparator />

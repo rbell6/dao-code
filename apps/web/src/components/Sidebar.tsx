@@ -1233,6 +1233,21 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         #{pr.number}
       </a>
     ) : null;
+  // Static shell metadata, unlike the PR badge: no live status to fetch, so a
+  // plain link to the ticket keeps rows cheap however many are on screen.
+  const jiraBadge = thread.linkedJiraIssue ? (
+    <a
+      href={thread.linkedJiraIssue.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      className="shrink-0 text-xs text-secondary-label hover:underline hover:text-foreground"
+      aria-label={`Open ${thread.linkedJiraIssue.key} in Jira`}
+    >
+      {thread.linkedJiraIssue.key}
+    </a>
+  ) : null;
   const terminalStatusIcon = terminalStatus ? (
     <span
       role="img"
@@ -1606,6 +1621,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 <span className="flex-1" />
               )}
               {terminalStatusIcon}
+              {jiraBadge}
               {prBadge}
               {diff ? (
                 <span className="shrink-0 font-mono">

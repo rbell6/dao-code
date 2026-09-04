@@ -8,6 +8,7 @@ import {
   Globe2Icon,
   LoaderIcon,
   SearchIcon,
+  SquareCheckBigIcon,
   SquarePenIcon,
   TerminalIcon,
   TriangleAlertIcon,
@@ -793,6 +794,26 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
               </TooltipPopup>
             </Tooltip>
           )}
+          {thread.linkedJiraIssue ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <a
+                    href={thread.linkedJiraIssue.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Open ${thread.linkedJiraIssue.key} in Jira`}
+                    className="inline-flex cursor-pointer items-center justify-center rounded-sm text-muted-foreground/60 outline-hidden hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <SquareCheckBigIcon className="size-3" />
+                  </a>
+                }
+              />
+              <TooltipPopup side="top">{thread.linkedJiraIssue.key}</TooltipPopup>
+            </Tooltip>
+          ) : null}
           <ThreadWorktreeIndicator thread={thread} />
           {terminalStatus && (
             <Tooltip>
