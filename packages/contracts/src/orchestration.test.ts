@@ -820,6 +820,48 @@ it.effect("accepts a linked pull request in thread.meta.update", () =>
   }),
 );
 
+it.effect("accepts a linked Jira issue when a turn bootstraps a thread", () =>
+  Effect.gen(function* () {
+    const linkedJiraIssue = {
+      site: "example.atlassian.net",
+      key: "IA-1234",
+      url: "https://example.atlassian.net/browse/IA-1234",
+    };
+    const parsed = yield* decodeOrchestrationCommand({
+      type: "thread.turn.start",
+      commandId: "cmd-jira-thread",
+      threadId: "thread-jira",
+      message: {
+        messageId: "message-jira",
+        role: "user",
+        text: "Implement IA-1234",
+        attachments: [],
+      },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      bootstrap: {
+        createThread: {
+          projectId: "project-1",
+          title: "IA-1234: Improve payroll export",
+          modelSelection: { instanceId: "codex", model: "gpt-5-codex" },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          linkedJiraIssue,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.strictEqual(parsed.type, "thread.turn.start");
+    if (parsed.type === "thread.turn.start") {
+      assert.deepStrictEqual(parsed.bootstrap?.createThread?.linkedJiraIssue, linkedJiraIssue);
+    }
+  }),
+);
+
 it.effect("accepts an internal title regeneration completion", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeOrchestrationCommand({

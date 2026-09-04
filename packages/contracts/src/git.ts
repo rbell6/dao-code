@@ -17,6 +17,11 @@ export const GitStackedAction = Schema.Literals([
   "commit_push_pr",
 ]);
 export type GitStackedAction = typeof GitStackedAction.Type;
+export const ChangeRequestReference = Schema.Struct({
+  key: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(100)),
+  url: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(2_000)),
+});
+export type ChangeRequestReference = typeof ChangeRequestReference.Type;
 export const GitActionProgressPhase = Schema.Literals(["branch", "commit", "push", "pr"]);
 export type GitActionProgressPhase = typeof GitActionProgressPhase.Type;
 export const GitActionProgressKind = Schema.Literals([
@@ -118,6 +123,9 @@ export const GitRunStackedActionInput = Schema.Struct({
   featureBranch: Schema.optional(Schema.Boolean),
   filePaths: Schema.optional(
     Schema.Array(TrimmedNonEmptyStringSchema).check(Schema.isMinLength(1)),
+  ),
+  references: Schema.optional(
+    Schema.Array(ChangeRequestReference).check(Schema.isMinLength(1), Schema.isMaxLength(10)),
   ),
 });
 export type GitRunStackedActionInput = typeof GitRunStackedActionInput.Type;

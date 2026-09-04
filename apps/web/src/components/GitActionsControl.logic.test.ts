@@ -1,4 +1,8 @@
-import type { VcsStatusResult } from "@t3tools/contracts";
+import {
+  ProjectId,
+  type GitRunStackedActionResult,
+  type VcsStatusResult,
+} from "@t3tools/contracts";
 import { assert, describe, it } from "vite-plus/test";
 import {
   buildGitActionProgressStages,
@@ -7,10 +11,55 @@ import {
   resolveAutoFeatureBranchName,
   resolveDefaultBranchActionDialogCopy,
   resolveLiveThreadBranchUpdate,
+  resolveLinkedPullRequestAfterGitAction,
   resolveQuickAction,
   resolveThreadBranchUpdate,
   resolveThreadBranchMetadataPatch,
 } from "./GitActionsControl.logic";
+
+function gitActionResult(pr: GitRunStackedActionResult["pr"]): GitRunStackedActionResult {
+  return {
+    action: "create_pr",
+    branch: { status: "skipped_not_requested" },
+    commit: { status: "skipped_not_requested" },
+    push: { status: "skipped_not_requested" },
+    pr,
+    toast: { title: "Done", description: "Done", cta: { kind: "none" } },
+  };
+}
+
+describe("resolveLinkedPullRequestAfterGitAction", () => {
+  it("returns the durable thread link after creating a pull request", () => {
+    assert.deepEqual(
+      resolveLinkedPullRequestAfterGitAction({
+        result: gitActionResult({
+          status: "created",
+          number: 42,
+          url: "https://github.com/pingdotgg/t3code/pull/42",
+        }),
+        projectId: ProjectId.make("project-1"),
+        repository: "pingdotgg/t3code",
+      }),
+      {
+        projectId: "project-1",
+        repository: "pingdotgg/t3code",
+        number: 42,
+        url: "https://github.com/pingdotgg/t3code/pull/42",
+      },
+    );
+  });
+
+  it("ignores actions without a resolvable pull request", () => {
+    assert.equal(
+      resolveLinkedPullRequestAfterGitAction({
+        result: gitActionResult({ status: "created" }),
+        projectId: ProjectId.make("project-1"),
+        repository: "pingdotgg/t3code",
+      }),
+      null,
+    );
+  });
+});
 
 function status(overrides: Partial<VcsStatusResult> = {}): VcsStatusResult {
   return {

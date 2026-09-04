@@ -4,13 +4,15 @@ import {
   type ProjectScript,
   type ResolvedKeybindingsConfig,
   type ThreadId,
+  type ThreadLinkedJiraIssue,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, SquareCheckBigIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   memo,
   useCallback,
@@ -51,6 +53,7 @@ interface ChatHeaderProps {
   activeThreadId: ThreadId;
   draftId?: DraftId;
   activeThreadTitle: string;
+  linkedJiraIssue?: ThreadLinkedJiraIssue | null | undefined;
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
   activeProjectName: string | undefined;
@@ -123,6 +126,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadId,
   draftId,
   activeThreadTitle,
+  linkedJiraIssue,
   isServerThread,
   activeProjectName,
   activeProjectCwd,
@@ -142,6 +146,7 @@ export const ChatHeader = memo(function ChatHeader({
   onUpdateProjectScript,
   onDeleteProjectScript,
 }: ChatHeaderProps) {
+  const navigate = useNavigate();
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const headerActionsRef = useRef<HTMLDivElement | null>(null);
@@ -335,6 +340,36 @@ export const ChatHeader = memo(function ChatHeader({
                   <span className="max-w-40 truncate">{activeProjectName}</span>
                 </TooltipTrigger>
                 <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
+              </Tooltip>
+            </WorkspaceBreadcrumbItem>
+            <WorkspaceBreadcrumbSeparator />
+          </>
+        ) : null}
+        {linkedJiraIssue ? (
+          <>
+            <WorkspaceBreadcrumbItem className="shrink-0">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded-sm text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() =>
+                        void navigate({
+                          to: "/jira",
+                          search: {
+                            environmentId: activeThreadEnvironmentId,
+                            key: linkedJiraIssue.key,
+                          },
+                        })
+                      }
+                    />
+                  }
+                >
+                  <SquareCheckBigIcon className="size-3.5" />
+                  {linkedJiraIssue.key}
+                </TooltipTrigger>
+                <TooltipPopup side="top">Open {linkedJiraIssue.key} in Jira</TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
             <WorkspaceBreadcrumbSeparator />
