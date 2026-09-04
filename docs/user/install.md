@@ -47,7 +47,7 @@ registry.
 Windows:
 
 ```bash
-winget install T3Tools.Dao
+winget install T3Tools.T3Code
 ```
 
 macOS:

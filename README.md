@@ -41,7 +41,7 @@ Install the latest version of the desktop app from [GitHub Releases](https://git
 #### Windows (`winget`)
 
 ```bash
-winget install T3Tools.Dao
+winget install T3Tools.T3Code
 ```
 
 #### macOS (Homebrew)
