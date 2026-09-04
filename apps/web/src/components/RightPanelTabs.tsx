@@ -16,6 +16,7 @@ import {
   GitPullRequest,
   Globe2,
   Plus,
+  SquareCheckBig,
   TerminalSquare,
   Volume2,
   VolumeOff,
@@ -602,6 +603,8 @@ function surfaceTitle(
       );
     case "pull-request":
       return `#${surface.number}`;
+    case "jira":
+      return surface.key;
     case "agents":
       return "Agents";
     case "preview": {
@@ -683,6 +686,8 @@ function SurfaceIcon({
           seed={pullRequestStatusSeeds?.[surface.id]}
         />
       );
+    case "jira":
+      return <SquareCheckBig className="size-3 shrink-0 text-muted-foreground" />;
     case "agents":
       return <Bot className="size-3 shrink-0" />;
   }

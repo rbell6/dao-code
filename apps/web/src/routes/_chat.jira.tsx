@@ -1,14 +1,15 @@
-import type {
-  EnvironmentId,
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  type EnvironmentId,
   JiraIssueDetail,
   JiraIssueListInput,
   JiraIssueStatusCategory,
   JiraIssueSummary,
   JiraIssueView,
   ProjectId,
-  ThreadLinkedJiraIssue,
+  type ThreadLinkedJiraIssue,
+  ThreadId,
 } from "@t3tools/contracts";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   ArrowUpRightIcon,
@@ -19,8 +20,10 @@ import {
   SquareCheckBigIcon,
   UnlinkIcon,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
 
+import { RightPanelTabs } from "../components/RightPanelTabs";
 import { WorkspacePageContainer } from "../components/WorkspacePageContainer";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { WorkspaceSearchInput } from "../components/WorkspaceSearchInput";
@@ -54,10 +57,20 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { Textarea } from "../components/ui/textarea";
 import { toastManager } from "../components/ui/toast";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
+import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { resolveShortcutCommand } from "../keybindings";
+import { isTerminalFocused } from "../lib/terminalFocus";
 import { buildJiraStarterPrompt, normalizeJiraSite } from "../jiraSession";
 import { jiraTransitionStatusOptions } from "../jiraStatusOptions";
 import { jiraIssueFacets } from "../jiraWorkspace";
+import {
+  selectActiveRightPanelSurface,
+  selectSelectedRightPanelSurface,
+  selectThreadRightPanelState,
+  useRightPanelStore,
+  type JiraIssueSurface,
+} from "../rightPanelStore";
 import { useEnvironments } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { jiraEnvironment } from "../state/jira";
@@ -66,6 +79,7 @@ import { useDebouncedValue } from "../state/queries";
 import { useAtomCommand } from "../state/use-atom-command";
 import { threadEnvironment } from "../state/threads";
 import { cn } from "~/lib/utils";
+import { primaryServerKeybindingsAtom } from "~/state/server";
 
 export interface JiraSearch {
   readonly environmentId?: EnvironmentId;
@@ -80,6 +94,12 @@ export interface JiraSearch {
 
 const STATUS_CATEGORIES: ReadonlyArray<JiraIssueStatusCategory> = ["todo", "in-progress", "done"];
 const CHOOSE_STATUS_VALUE = "__choose_status__";
+const JIRA_PANEL_ID = ThreadId.make("jira-panel");
+const JIRA_PANEL_ENVIRONMENT_ID = "jira-panel" as EnvironmentId;
+const EMPTY_PREVIEW_SESSIONS = {};
+const EMPTY_PREVIEW_DESKTOP_STATE = {};
+const EMPTY_TERMINAL_LABELS = new Map<string, string>();
+const EMPTY_PENDING_SURFACES = new Set<string>();
 
 function optionalSearchString(value: unknown, limit: number): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -182,16 +202,33 @@ function JiraWorkspace() {
     () => jiraIssueFacets(facetIssues.data?.issues ?? issues.data?.issues ?? []),
     [facetIssues.data?.issues, issues.data?.issues],
   );
-  const selectedKey = search.key ?? issues.data?.issues[0]?.key ?? null;
+  const rightPanelRef = useMemo(() => scopeThreadRef(JIRA_PANEL_ENVIRONMENT_ID, JIRA_PANEL_ID), []);
+  const rightPanelState = useRightPanelStore((state) =>
+    selectThreadRightPanelState(state.byThreadKey, rightPanelRef),
+  );
+  const selectedRightPanelSurface = useRightPanelStore((state) =>
+    selectSelectedRightPanelSurface(state.byThreadKey, rightPanelRef),
+  );
+  const activeJiraSurface =
+    rightPanelState.isOpen && selectedRightPanelSurface?.kind === "jira"
+      ? selectedRightPanelSurface
+      : null;
+  const selectedKey = activeJiraSurface?.key ?? search.key ?? null;
+  const detailEnvironmentId =
+    (activeJiraSurface?.environmentId as EnvironmentId | undefined) ?? environmentId;
   const detail = useEnvironmentQuery(
-    canLoad && environmentId !== null && selectedKey !== null
-      ? jiraEnvironment.detail({ environmentId, input: { key: selectedKey } })
+    detailEnvironmentId !== null && selectedKey !== null
+      ? jiraEnvironment.detail({ environmentId: detailEnvironmentId, input: { key: selectedKey } })
       : null,
   );
-  const selectedSite = normalizeJiraSite(connection.data?.site ?? detail.data?.url ?? null);
+  const selectedSite = normalizeJiraSite(
+    detailEnvironmentId === environmentId
+      ? (connection.data?.site ?? detail.data?.url ?? null)
+      : (detail.data?.url ?? null),
+  );
   const environmentProjects = useMemo(
-    () => projects.filter((candidate) => candidate.environmentId === environmentId),
-    [environmentId, projects],
+    () => projects.filter((candidate) => candidate.environmentId === detailEnvironmentId),
+    [detailEnvironmentId, projects],
   );
   const linkedThreads = useMemo(
     () =>
@@ -199,11 +236,11 @@ function JiraWorkspace() {
         ? []
         : threadShells.filter(
             (thread) =>
-              thread.environmentId === environmentId &&
+              thread.environmentId === detailEnvironmentId &&
               thread.linkedJiraIssue?.site.toLowerCase() === selectedSite.toLowerCase() &&
               thread.linkedJiraIssue.key.toLowerCase() === selectedKey.toLowerCase(),
           ),
-    [environmentId, selectedKey, selectedSite, threadShells],
+    [detailEnvironmentId, selectedKey, selectedSite, threadShells],
   );
   const transitionStatusOptions = useMemo(
     () =>
@@ -215,11 +252,27 @@ function JiraWorkspace() {
           ),
     [detail.data, facetIssues.data?.issues, issues.data?.issues],
   );
-  const selectIssue = useCallback((key: string) => updateSearch({ key }), [updateSearch]);
+  const openIssue = useCallback(
+    (key: string, targetEnvironmentId = environmentId) => {
+      if (targetEnvironmentId === null) return;
+      useRightPanelStore.getState().openJiraIssue(rightPanelRef, {
+        environmentId: targetEnvironmentId,
+        key,
+      });
+      updateSearch({ environmentId: targetEnvironmentId, key });
+    },
+    [environmentId, rightPanelRef, updateSearch],
+  );
+  useEffect(() => {
+    if (!search.key || environmentId === null) return;
+    useRightPanelStore.getState().openJiraIssue(rightPanelRef, {
+      environmentId,
+      key: search.key,
+    });
+  }, [environmentId, rightPanelRef, search.key]);
   const clearSearch = useCallback(
     () =>
       updateSearch({
-        key: undefined,
         q: undefined,
         view: "my-work",
         project: undefined,
@@ -228,6 +281,62 @@ function JiraWorkspace() {
       }),
     [updateSearch],
   );
+
+  const selectSurfaceInUrl = (surface: JiraIssueSurface | null) =>
+    updateSearch(
+      surface === null
+        ? { key: undefined }
+        : { environmentId: surface.environmentId as EnvironmentId, key: surface.key },
+    );
+  const activateSurface = (surface: JiraIssueSurface) => {
+    useRightPanelStore.getState().activateSurface(rightPanelRef, surface.id);
+    selectSurfaceInUrl(surface);
+  };
+  const closeSurface = (surface: JiraIssueSurface) => {
+    useRightPanelStore.getState().closeSurface(rightPanelRef, surface.id);
+    const next = selectActiveRightPanelSurface(
+      useRightPanelStore.getState().byThreadKey,
+      rightPanelRef,
+    );
+    selectSurfaceInUrl(next?.kind === "jira" ? next : null);
+  };
+  const closeOtherSurfaces = (surface: JiraIssueSurface) => {
+    useRightPanelStore.getState().closeOtherSurfaces(rightPanelRef, surface.id);
+    selectSurfaceInUrl(surface);
+  };
+  const closeSurfacesToRight = (surface: JiraIssueSurface) => {
+    useRightPanelStore.getState().closeSurfacesToRight(rightPanelRef, surface.id);
+    const next = selectActiveRightPanelSurface(
+      useRightPanelStore.getState().byThreadKey,
+      rightPanelRef,
+    );
+    selectSurfaceInUrl(next?.kind === "jira" ? next : null);
+  };
+  const closeAllSurfaces = () => {
+    useRightPanelStore.getState().closeAllSurfaces(rightPanelRef);
+    selectSurfaceInUrl(null);
+  };
+
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  // This page has no ChatView, so the shared panel handles `rightPanel.close`
+  // itself. With nothing open the event falls through to its native meaning.
+  const closeActiveSurfaceFromShortcut = useEffectEvent((event: KeyboardEvent) => {
+    if (activeJiraSurface === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) closeSurface(activeJiraSurface);
+  });
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isCommandPaletteOpen()) return;
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: { terminalFocus: isTerminalFocused() },
+      });
+      if (command === "rightPanel.close") closeActiveSurfaceFromShortcut(event);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [keybindings]);
 
   if (isReady && capableEnvironments.length === 0) {
     return <JiraUnavailable />;
@@ -290,13 +399,16 @@ function JiraWorkspace() {
       {connection.data?.state && connection.data.state !== "ready" ? (
         <JiraSetupState state={connection.data.state} detail={connection.data.detail} />
       ) : (
-        <main className="min-h-0 flex-1">
-          <WorkspacePageContainer className="h-full min-h-0 gap-3 pt-4 pb-4" width="expanded">
+        <main className="relative flex min-h-0 flex-1">
+          <WorkspacePageContainer
+            className="h-full min-h-0 min-w-0 flex-1 gap-3 pt-4 pb-4"
+            width="expanded"
+          >
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
               <WorkspaceSearchInput
                 ariaLabel={mode === "jql" ? "JQL query" : "Search Jira issues"}
                 busy={issues.isPending && Boolean(issues.data)}
-                onChange={(value) => updateSearch({ q: value || undefined, key: undefined })}
+                onChange={(value) => updateSearch({ q: value || undefined })}
                 placeholder={
                   mode === "jql" ? "project = APP ORDER BY updated DESC" : "Search key or text"
                 }
@@ -310,7 +422,7 @@ function JiraWorkspace() {
                   onValueChange={(values) => {
                     const next = values[0];
                     if (next === "search" || next === "jql") {
-                      updateSearch({ mode: next === "jql" ? "jql" : undefined, key: undefined });
+                      updateSearch({ mode: next === "jql" ? "jql" : undefined });
                     }
                   }}
                 >
@@ -322,10 +434,10 @@ function JiraWorkspace() {
                     issueType={search.issueType}
                     issueTypes={facets.issueTypes}
                     onClear={clearSearch}
-                    onIssueTypeChange={(issueType) => updateSearch({ issueType, key: undefined })}
-                    onProjectChange={(project) => updateSearch({ project, key: undefined })}
-                    onStatusChange={(status) => updateSearch({ status, key: undefined })}
-                    onViewChange={(nextView) => updateSearch({ view: nextView, key: undefined })}
+                    onIssueTypeChange={(issueType) => updateSearch({ issueType })}
+                    onProjectChange={(project) => updateSearch({ project })}
+                    onStatusChange={(status) => updateSearch({ status })}
+                    onViewChange={(nextView) => updateSearch({ view: nextView })}
                     project={search.project}
                     projects={facets.projects}
                     status={search.status}
@@ -335,7 +447,7 @@ function JiraWorkspace() {
               </div>
             </div>
 
-            <div className="grid min-h-0 flex-1 grid-rows-[minmax(16rem,2fr)_minmax(20rem,3fr)] overflow-hidden rounded-xl border bg-background md:grid-cols-[minmax(18rem,2fr)_minmax(24rem,3fr)] md:grid-rows-1">
+            <div className="min-h-0 flex-1 overflow-hidden rounded-xl border bg-background">
               <IssueList
                 error={issues.error}
                 filtered={
@@ -345,16 +457,63 @@ function JiraWorkspace() {
                 issues={issues.data?.issues ?? []}
                 onClear={clearSearch}
                 onRefresh={refresh}
-                onSelect={selectIssue}
+                onSelect={openIssue}
                 query={query}
-                selectedKey={selectedKey}
+                selectedKey={
+                  activeJiraSurface?.environmentId === environmentId ? selectedKey : null
+                }
               />
+            </div>
+          </WorkspacePageContainer>
+
+          {activeJiraSurface && detailEnvironmentId !== null ? (
+            <RightPanelTabs
+              activeSurfaceId={activeJiraSurface.id}
+              agentsAvailable={false}
+              browserAvailable={false}
+              defaultWidth={typeof window === "undefined" ? 640 : Math.floor(window.innerWidth / 2)}
+              desktopByTabId={EMPTY_PREVIEW_DESKTOP_STATE}
+              diffAvailable={false}
+              environmentId={detailEnvironmentId}
+              filesAvailable={false}
+              liveAgentCount={0}
+              mode="inline"
+              onActivate={(surface) => {
+                if (surface.kind === "jira") activateSurface(surface);
+              }}
+              onAddAgents={() => undefined}
+              onAddBrowser={() => undefined}
+              onAddBrowserInProfile={() => undefined}
+              onAddDiff={() => undefined}
+              onAddFiles={() => undefined}
+              onAddPullRequest={() => undefined}
+              onAddTerminal={() => undefined}
+              onCloseAllSurfaces={closeAllSurfaces}
+              onCloseOtherSurfaces={(surface) => {
+                if (surface.kind === "jira") closeOtherSurfaces(surface);
+              }}
+              onCloseSurface={(surface) => {
+                if (surface.kind === "jira") closeSurface(surface);
+              }}
+              onCloseSurfacesToRight={(surface) => {
+                if (surface.kind === "jira") closeSurfacesToRight(surface);
+              }}
+              onCopyFilePath={() => undefined}
+              open={rightPanelState.isOpen}
+              pendingSurfaceIds={EMPTY_PENDING_SURFACES}
+              previewSessions={EMPTY_PREVIEW_SESSIONS}
+              pullRequestAvailable={false}
+              surfaces={rightPanelState.surfaces}
+              terminalAvailable={false}
+              terminalLabelsById={EMPTY_TERMINAL_LABELS}
+              widthStorageKey="t3code:jira-panel-width"
+            >
               <IssueDetail
                 detail={detail.data}
-                environmentId={environmentId}
+                environmentId={detailEnvironmentId}
                 error={detail.error}
                 isPending={detail.isPending}
-                key={selectedKey ?? "empty"}
+                key={`${detailEnvironmentId}:${selectedKey ?? "empty"}`}
                 linkedThreads={linkedThreads}
                 onChanged={() => {
                   issues.refresh();
@@ -365,8 +524,8 @@ function JiraWorkspace() {
                 site={selectedSite}
                 statusOptions={transitionStatusOptions}
               />
-            </div>
-          </WorkspacePageContainer>
+            </RightPanelTabs>
+          ) : null}
         </main>
       )}
     </SidebarInset>
@@ -443,7 +602,7 @@ function IssueList({
   readonly onRefresh: () => void;
 }) {
   return (
-    <section className="min-h-0 overflow-y-auto border-b p-2 md:border-r md:border-b-0">
+    <section className="h-full min-h-0 overflow-y-auto p-2">
       {isPending && issues.length === 0 ? (
         <JiraIssueListGhost />
       ) : error && issues.length === 0 ? (

@@ -26,6 +26,12 @@ memory. It does not start an ACLI process per thread row. Creating a pull reques
 list of work references to the source-control writer; the writer adds the primary key to the title
 and missing links to the description without calling Jira.
 
+The Jira workspace reuses the shared right-panel store and tab shell. Each surface carries its
+environment id and issue key, which keeps tabs unambiguous across connected environments. The
+workspace uses a fixed sentinel panel reference and excludes it from persistence, matching the
+Pull Requests workspace: tab state survives navigation during the session but a restart opens a
+fresh list.
+
 This keeps Jira behavior remote-ready: the CLI and credentials live with the server, while web and
 desktop clients use the same authenticated WebSocket from any connection mode. The capability is
 optional so newer clients can remain connected to older servers without issuing unsupported RPCs.

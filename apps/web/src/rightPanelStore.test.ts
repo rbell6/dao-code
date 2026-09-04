@@ -3,6 +3,7 @@ import { type EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
+  jiraIssueSurfaceId,
   migratePersistedRightPanelState,
   pullRequestSurfaceId,
   selectActiveRightPanel,
@@ -170,6 +171,21 @@ describe("rightPanelStore", () => {
       migratePersistedRightPanelState({
         byThreadKey: {
           "env-1:pull-requests-panel": panelState,
+          "env-1:thread-A": panelState,
+        },
+      }),
+    ).toEqual({ byThreadKey: { "env-1:thread-A": panelState } });
+  });
+
+  it("drops the Jira workspace's shared panel so a restart opens the page fresh", () => {
+    const target = { environmentId: "env-1", key: "ia-123" };
+    useRightPanelStore.getState().openJiraIssue(refA, target);
+    const panelState = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+
+    expect(
+      migratePersistedRightPanelState({
+        byThreadKey: {
+          "env-1:jira-panel": panelState,
           "env-1:thread-A": panelState,
         },
       }),
@@ -490,6 +506,22 @@ describe("rightPanelStore", () => {
       pullRequestSurfaceId(second),
     ]);
     expect(state.activeSurfaceId).toBe(pullRequestSurfaceId(first));
+  });
+
+  it("tracks one surface per Jira issue and normalizes its key", () => {
+    const first = { environmentId: "env-1", key: "ia-123" };
+    const second = { environmentId: "env-1", key: "IA-124" };
+    useRightPanelStore.getState().openJiraIssue(refA, first);
+    useRightPanelStore.getState().openJiraIssue(refA, second);
+    useRightPanelStore.getState().openJiraIssue(refA, first);
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual([
+      jiraIssueSurfaceId(first),
+      jiraIssueSurfaceId(second),
+    ]);
+    expect(state.activeSurfaceId).toBe(jiraIssueSurfaceId(first));
+    expect(state.surfaces[0]).toMatchObject({ key: "IA-123", kind: "jira" });
   });
 
   it("keeps one pull request read from two servers as two tabs", () => {
