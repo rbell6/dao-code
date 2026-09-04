@@ -1921,12 +1921,14 @@ function PullRequestsRouteView() {
             onAddDiff={() => undefined}
             onAddFiles={() => undefined}
             onAddPullRequest={() => undefined}
+            onAddJira={() => undefined}
             onAddAgents={() => undefined}
             browserAvailable={false}
             terminalAvailable={false}
             diffAvailable={false}
             filesAvailable={false}
             pullRequestAvailable={false}
+            jiraAvailable={false}
             agentsAvailable={false}
             liveAgentCount={0}
             pullRequestStatusSeeds={listedPullRequestTabStatuses}

@@ -40,9 +40,14 @@ then continue to the new thread. The prompt includes the issue key, link, summar
 The project's normal model and workspace defaults still apply.
 
 The thread keeps its Jira relationship after the first message starts the provider session. Select
-the Jira key in the thread header to return to the issue. The issue's **Work** section lists every
-linked thread, its branch, and its pull request when one exists. Use the unlink action beside a
-thread when it no longer belongs to that issue.
+the Jira key in the thread header to open the ticket in the thread's right panel, next to the diff,
+terminal, and pull request surfaces — the **Jira ticket** card in the panel's surface picker (or the
+`J` shortcut) opens it too. The panel shows the full ticket and supports the same actions as the
+Jira workspace: comment, change status, or start another session. Threads with a linked ticket also
+show its key in the sidebar, alongside the branch and pull request.
+
+The issue's **Work** section lists every linked thread, its branch, and its pull request when one
+exists. Use the unlink action beside a thread when it no longer belongs to that issue.
 
 Pull requests created from a linked thread include the Jira key in the title and a Jira link in the
 description. Dao also links the new pull request to the thread, so the issue, thread, and pull
