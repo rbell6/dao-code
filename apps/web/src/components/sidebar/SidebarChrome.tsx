@@ -3,6 +3,7 @@ import {
   ChartNoAxesColumnIcon,
   GitPullRequestIcon,
   SettingsIcon,
+  SquareCheckBigIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
@@ -143,13 +144,18 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             ? "usage"
             : location.pathname === "/pull-requests"
               ? "pull-requests"
-              : null,
+              : location.pathname === "/jira"
+                ? "jira"
+                : null,
   });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
   // the link to lead somewhere.
   const pullRequestsSupported = environments.some(
     (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
+  );
+  const jiraSupported = environments.some(
+    (environment) => environment.serverConfig?.environment.capabilities.jira === true,
   );
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
@@ -166,6 +172,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
+  }, [closeMobileSidebar, navigate]);
+  const handleJiraClick = useCallback(() => {
+    closeMobileSidebar();
+    void navigate({ to: "/jira", search: {} });
   }, [closeMobileSidebar, navigate]);
 
   const handleUsageClick = useCallback(() => {
@@ -205,6 +215,13 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               icon={<GitPullRequestIcon />}
               label="Pull Requests"
               onClick={handlePullRequestsClick}
+            />
+          ) : null}
+          {jiraSupported ? (
+            <SidebarUtilityItem
+              icon={<SquareCheckBigIcon />}
+              label="Jira"
+              onClick={handleJiraClick}
             />
           ) : null}
           <SidebarUtilityItem

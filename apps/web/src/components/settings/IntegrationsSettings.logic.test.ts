@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { EnvironmentId } from "@t3tools/contracts";
 
-import { browserProfileRemovalAvailable, clearBrowserProfileData } from "./IntegrationsSettings";
+import {
+  browserProfileRemovalAvailable,
+  clearBrowserProfileData,
+  jiraAuthenticationTypeLabel,
+} from "./IntegrationsSettings";
 
 const environmentId = "environment-a" as EnvironmentId;
 const secondEnvironmentId = "environment-b" as EnvironmentId;
@@ -70,5 +74,17 @@ describe("browserProfileRemovalAvailable", () => {
     expect(browserProfileRemovalAvailable(true, true, 0)).toBe(false);
     expect(browserProfileRemovalAvailable(true, false, 1)).toBe(false);
     expect(browserProfileRemovalAvailable(false, true, 1)).toBe(false);
+  });
+});
+
+describe("jiraAuthenticationTypeLabel", () => {
+  it("presents known ACLI authentication types", () => {
+    expect(jiraAuthenticationTypeLabel("api_token")).toBe("API token");
+    expect(jiraAuthenticationTypeLabel("oauth")).toBe("OAuth");
+  });
+
+  it("keeps unknown future authentication types readable", () => {
+    expect(jiraAuthenticationTypeLabel("service_account")).toBe("service account");
+    expect(jiraAuthenticationTypeLabel(null)).toBe("Unknown");
   });
 });

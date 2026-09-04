@@ -27,6 +27,8 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as JiraCli from "./jira/JiraCli.ts";
+import * as JiraService from "./jira/JiraService.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
@@ -311,6 +313,10 @@ const PullRequestServiceLive = PullRequestService.layer.pipe(
   Layer.provide(SourceControlRateLimit.layer),
 );
 
+const JiraServiceLive = JiraService.layer.pipe(
+  Layer.provide(JiraCli.layer.pipe(Layer.provide(VcsProcess.layer))),
+);
+
 const GitManagerLayerLive = GitManager.layer.pipe(
   Layer.provideMerge(ProjectSetupScriptRunner.layer),
   Layer.provideMerge(GitVcsDriver.layer),
@@ -445,7 +451,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(
-    Layer.mergeAll(SourceControlProviderRegistryLayerLive, PullRequestServiceLive),
+    Layer.mergeAll(SourceControlProviderRegistryLayerLive, PullRequestServiceLive, JiraServiceLive),
   ),
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
@@ -538,6 +544,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),
+  Layer.provide(JiraServiceLive),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(DesktopAppUpdateLayerLive))),
   Layer.provide(commandReadinessLayer),
