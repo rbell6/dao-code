@@ -1523,6 +1523,21 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(useComposerDraftStore.getState().getDraftThread(draftId)?.startFromOrigin).toBe(false);
   });
 
+  it("stores and clears the Jira issue linked to a draft thread", () => {
+    const store = useComposerDraftStore.getState();
+    const linkedJiraIssue = {
+      site: "example.atlassian.net",
+      key: "IA-1234",
+      url: "https://example.atlassian.net/browse/IA-1234",
+    };
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId, linkedJiraIssue });
+
+    expect(store.getDraftThread(draftId)?.linkedJiraIssue).toEqual(linkedJiraIssue);
+
+    store.setDraftThreadContext(draftId, { linkedJiraIssue: null });
+    expect(store.getDraftThread(draftId)?.linkedJiraIssue).toBeNull();
+  });
+
   it("preserves existing branch and worktree when setProjectDraftThreadId receives undefined", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, {

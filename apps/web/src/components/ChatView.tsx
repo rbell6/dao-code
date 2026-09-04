@@ -6530,6 +6530,9 @@ function ChatViewContent(props: ChatViewProps) {
                       interactionMode: sendInteractionMode,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
+                      ...(activeThread.linkedJiraIssue !== undefined
+                        ? { linkedJiraIssue: activeThread.linkedJiraIssue }
+                        : {}),
                       createdAt: activeThread.createdAt,
                     },
                   }
@@ -7585,6 +7588,7 @@ function ChatViewContent(props: ChatViewProps) {
             activeThreadId={activeThread.id}
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
             activeThreadTitle={activeThread.title}
+            linkedJiraIssue={activeThread.linkedJiraIssue}
             isServerThread={isServerThread}
             activeProjectName={activeProject?.title}
             activeProjectCwd={activeProject?.workspaceRoot ?? null}

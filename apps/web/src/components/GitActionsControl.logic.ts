@@ -1,6 +1,8 @@
 import type {
   GitRunStackedActionResult,
   GitStackedAction,
+  ProjectId,
+  ThreadLinkedPullRequest,
   VcsStatusResult,
 } from "@t3tools/contracts";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
@@ -42,6 +44,28 @@ export type DefaultBranchConfirmableAction =
   | "create_pr"
   | "commit_push"
   | "commit_push_pr";
+
+export function resolveLinkedPullRequestAfterGitAction(input: {
+  result: GitRunStackedActionResult;
+  projectId: ProjectId;
+  repository: string | null;
+}): ThreadLinkedPullRequest | null {
+  const { pr } = input.result;
+  if (
+    pr.status === "skipped_not_requested" ||
+    pr.number === undefined ||
+    !pr.url?.trim() ||
+    !input.repository?.trim()
+  ) {
+    return null;
+  }
+  return {
+    projectId: input.projectId,
+    repository: input.repository,
+    number: pr.number,
+    url: pr.url,
+  };
+}
 
 function resolveChangeRequestTerminology(
   gitStatus: VcsStatusResult | null,

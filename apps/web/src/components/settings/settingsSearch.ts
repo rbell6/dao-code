@@ -324,6 +324,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
+    id: "jira",
+    title: "Jira",
+    to: "/settings/integrations",
+    searchTerms: ["atlassian acli cloud account authentication issue tracker"],
+  },
+  {
     id: "agent-browser-access",
     title: "Agent browser access",
     to: "/settings/integrations",

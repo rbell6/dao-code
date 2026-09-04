@@ -130,6 +130,7 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as JiraService from "./jira/JiraService.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
@@ -592,6 +593,7 @@ const makeWsRpcLayer = (
       const sourceControlRepositories =
         yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const pullRequests = yield* PullRequestService.PullRequestService;
+      const jira = yield* JiraService.JiraService;
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
       const sessions = yield* SessionStore.SessionStore;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
@@ -1087,6 +1089,9 @@ const makeWsRpcLayer = (
                 interactionMode: bootstrap.createThread.interactionMode,
                 branch: bootstrap.createThread.branch,
                 worktreePath: bootstrap.createThread.worktreePath,
+                ...(bootstrap.createThread.linkedJiraIssue !== undefined
+                  ? { linkedJiraIssue: bootstrap.createThread.linkedJiraIssue }
+                  : {}),
                 createdAt: bootstrap.createThread.createdAt,
               });
               // The successful create is a fence in the engine command queue:
@@ -2072,6 +2077,26 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.pullRequestsSetLabels, pullRequests.setLabels(input), {
             "rpc.aggregate": "pull-requests",
           }),
+        [WS_METHODS.jiraConnectionStatus]: (_input) =>
+          observeRpcEffect(WS_METHODS.jiraConnectionStatus, jira.connectionStatus, {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraList]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraList, jira.list(input), {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraDetail]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraDetail, jira.detail(input), {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraComment]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraComment, jira.comment(input), {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraTransition]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraTransition, jira.transition(input), {
+            "rpc.aggregate": "jira",
+          }),
         [WS_METHODS.sourceControlLookupRepository]: (input) =>
           observeRpcEffect(
             WS_METHODS.sourceControlLookupRepository,
@@ -2704,6 +2729,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         ),
     });
     const pullRequests = yield* PullRequestService.PullRequestService;
+    const jira = yield* JiraService.JiraService;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -2743,6 +2769,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
+              Layer.provide(Layer.succeed(JiraService.JiraService, jira)),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
                   Layer.provide(

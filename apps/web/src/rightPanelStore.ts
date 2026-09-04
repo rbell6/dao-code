@@ -21,6 +21,7 @@ export const RIGHT_PANEL_KINDS = [
   "preview",
   "terminal",
   "pull-request",
+  "jira",
   "agents",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
@@ -66,19 +67,27 @@ export type RightPanelSurface =
       repository: string;
       number: number;
     }
+  | {
+      /** A Jira issue opened from the workspace-level Jira list. */
+      id: `jira:${string}:${string}`;
+      kind: "jira";
+      environmentId: string;
+      key: string;
+    }
   | { id: "agents"; kind: "agents" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v9 removed the "plan" surface kind (plans render inline in the transcript).
 // v10 keys pull-request surfaces by reference instead of a singleton tab.
-// v11 stops persisting the pull-request list's shared panel, so a restart opens the page fresh.
+// v11 stops persisting workspace-level shared panels, so a restart opens those pages fresh.
 const RIGHT_PANEL_STORAGE_VERSION = 11;
 
 /**
  * The pull-request list's shared panel (see PULL_REQUESTS_PANEL_ID in the route) is session
  * state: reopening the app should show the list, not last session's tabs and detail fetches.
  */
-const isPullRequestsPanelKey = (threadKey: string) => threadKey.endsWith(":pull-requests-panel");
+const isWorkspacePanelKey = (threadKey: string) =>
+  threadKey.endsWith(":pull-requests-panel") || threadKey.endsWith(":jira-panel");
 
 export interface ThreadRightPanelState {
   isOpen: boolean;
@@ -90,7 +99,7 @@ interface RightPanelStoreState {
   byThreadKey: Record<string, ThreadRightPanelState>;
   open: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "jira">,
   ) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
@@ -99,6 +108,7 @@ interface RightPanelStoreState {
     ref: ScopedThreadRef,
     target: { environmentId?: string; projectId: string; repository: string; number: number },
   ) => void;
+  openJiraIssue: (ref: ScopedThreadRef, target: { environmentId: string; key: string }) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
@@ -120,7 +130,7 @@ interface RightPanelStoreState {
   toggleVisibility: (ref: ScopedThreadRef) => void;
   toggle: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "jira">,
   ) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
@@ -132,7 +142,7 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
 };
 
 const singletonSurface = (
-  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,
+  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request" | "jira">,
 ): RightPanelSurface => {
   switch (kind) {
     case "diff":
@@ -179,6 +189,23 @@ const terminalSurface = (terminalId: string): RightPanelSurface => ({
 });
 
 export type PullRequestSurface = Extract<RightPanelSurface, { kind: "pull-request" }>;
+export type JiraIssueSurface = Extract<RightPanelSurface, { kind: "jira" }>;
+
+export function jiraIssueSurfaceId(target: {
+  environmentId: string;
+  key: string;
+}): JiraIssueSurface["id"] {
+  return `jira:${encodeURIComponent(target.environmentId)}:${encodeURIComponent(target.key.toUpperCase())}`;
+}
+
+export function jiraIssueSurface(target: { environmentId: string; key: string }): JiraIssueSurface {
+  return {
+    id: jiraIssueSurfaceId(target),
+    kind: "jira",
+    environmentId: target.environmentId,
+    key: target.key.toUpperCase(),
+  };
+}
 
 export function pullRequestSurfaceId(target: {
   environmentId?: string;
@@ -254,7 +281,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
     typeof persistedState.byThreadKey === "object"
       ? Object.fromEntries(
           Object.entries(persistedState.byThreadKey as Record<string, ThreadRightPanelState>)
-            .filter(([threadKey]) => !isPullRequestsPanelKey(threadKey))
+            .filter(([threadKey]) => !isWorkspacePanelKey(threadKey))
             .map(([threadKey, threadState]) => {
               const validThreadState =
                 threadState && typeof threadState === "object" ? threadState : null;
@@ -293,6 +320,21 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                         pullRequestSurface({
                           ...rest,
                           ...(typeof environmentId === "string" ? { environmentId } : {}),
+                        }),
+                      ];
+                    }
+                    if (surface.kind === "jira") {
+                      if (
+                        typeof surface.environmentId !== "string" ||
+                        typeof surface.key !== "string" ||
+                        surface.key.trim().length === 0
+                      ) {
+                        return [];
+                      }
+                      return [
+                        jiraIssueSurface({
+                          environmentId: surface.environmentId,
+                          key: surface.key,
                         }),
                       ];
                     }
@@ -386,6 +428,12 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
             return upsertSurface(current, pullRequestSurface(target));
           }),
+        })),
+      openJiraIssue: (ref, target) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
+            upsertSurface(current, jiraIssueSurface(target)),
+          ),
         })),
       openFile: (ref, relativePath, line) =>
         set((state) => ({
@@ -672,7 +720,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       partialize: (state) => ({
         byThreadKey: Object.fromEntries(
           Object.entries(state.byThreadKey).filter(
-            ([threadKey]) => !isPullRequestsPanelKey(threadKey),
+            ([threadKey]) => !isWorkspacePanelKey(threadKey),
           ),
         ),
       }),

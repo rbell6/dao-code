@@ -16,6 +16,7 @@ import * as Schema from "effect/Schema";
 import {
   GitActionProgressEvent,
   GitActionProgressPhase,
+  type ChangeRequestReference,
   GitCommandError,
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
@@ -56,6 +57,7 @@ import {
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
+import { applyChangeRequestReferences } from "./changeRequestReferences.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -1783,6 +1785,7 @@ export const make = Effect.gen(function* () {
     cwd: string,
     fallbackBranch: string | null,
     emit: GitActionProgressEmitter,
+    references: ReadonlyArray<ChangeRequestReference>,
   ) {
     const provider = yield* sourceControlProvider(cwd);
     const terms = getChangeRequestTerminologyForKind(provider.kind);
@@ -1845,12 +1848,13 @@ export const make = Effect.gen(function* () {
       ...(policy ? { policy } : {}),
       modelSelection: settings.modelSelection,
     });
+    const content = applyChangeRequestReferences(generated, references);
 
     const bodyFile = path.join(
       tempDir,
       `t3code-pr-body-${process.pid}-${yield* randomUUIDv4(cwd)}.md`,
     );
-    yield* fileSystem.writeFileString(bodyFile, generated.body).pipe(
+    yield* fileSystem.writeFileString(bodyFile, content.body).pipe(
       Effect.mapError(
         (cause) =>
           new GitManagerError({
@@ -1871,7 +1875,7 @@ export const make = Effect.gen(function* () {
         cwd,
         baseRefName: baseBranch,
         headSelector: headContext.preferredHeadSelector,
-        title: generated.title,
+        title: content.title,
         bodyFile,
       })
       .pipe(Effect.ensuring(fileSystem.remove(bodyFile).pipe(Effect.catch(() => Effect.void))));
@@ -1882,7 +1886,7 @@ export const make = Effect.gen(function* () {
         status: "created" as const,
         baseBranch,
         headBranch: headContext.headBranch,
-        title: generated.title,
+        title: content.title,
       };
     }
 
@@ -2551,7 +2555,13 @@ export const make = Effect.gen(function* () {
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("pr"))),
                 Effect.flatMap(() =>
-                  runPrStep(textGenerationSettings, input.cwd, currentBranch, progress.emit),
+                  runPrStep(
+                    textGenerationSettings,
+                    input.cwd,
+                    currentBranch,
+                    progress.emit,
+                    input.references ?? [],
+                  ),
                 ),
               )
           : { status: "skipped_not_requested" as const };

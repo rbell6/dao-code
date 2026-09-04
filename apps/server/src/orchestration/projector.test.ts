@@ -64,6 +64,11 @@ describe("orchestration projector", () => {
             runtimeMode: "full-access",
             branch: null,
             worktreePath: null,
+            linkedJiraIssue: {
+              site: "example.atlassian.net",
+              key: "IA-1234",
+              url: "https://example.atlassian.net/browse/IA-1234",
+            },
             createdAt: now,
             updatedAt: now,
           },
@@ -85,6 +90,11 @@ describe("orchestration projector", () => {
         interactionMode: "default",
         branch: null,
         worktreePath: null,
+        linkedJiraIssue: {
+          site: "example.atlassian.net",
+          key: "IA-1234",
+          url: "https://example.atlassian.net/browse/IA-1234",
+        },
         latestTurn: null,
         createdAt: now,
         updatedAt: now,
