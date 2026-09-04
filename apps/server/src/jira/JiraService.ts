@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import type {
   JiraCommentInput,
@@ -131,6 +132,21 @@ export function jiraAuthStatus(
 export const make = Effect.gen(function* () {
   const cli = yield* JiraCli.JiraCli;
 
+  // Issue browse URLs must come from the authenticated site (ACLI issue payloads
+  // only carry internal Atlassian hosts). Successful lookups are cached; failed
+  // ones retry on the next request so authenticating later still resolves it.
+  const siteRef = yield* Ref.make<string | null>(null);
+  const site = Effect.gen(function* () {
+    const cached = yield* Ref.get(siteRef);
+    if (cached !== null) return cached;
+    const resolved = yield* cli.execute("connectionStatus", ["jira", "auth", "status"]).pipe(
+      Effect.map(({ stdout, stderr }) => siteFromStatus(`${stdout}\n${stderr}`)),
+      Effect.catch(() => Effect.succeed<string | null>(null)),
+    );
+    if (resolved !== null) yield* Ref.set(siteRef, resolved);
+    return resolved;
+  });
+
   const connectionStatus = cli.execute("connectionStatus", ["jira", "auth", "status"]).pipe(
     Effect.map(({ stdout, stderr }): JiraConnectionStatus => {
       const output = `${stdout}\n${stderr}`;
@@ -168,8 +184,11 @@ export const make = Effect.gen(function* () {
       ])
       .pipe(
         Effect.mapError(serviceError),
-        Effect.flatMap(({ stdout }) => {
-          const decoded = decodeJiraIssueListJson(stdout);
+        Effect.flatMap(({ stdout }) =>
+          Effect.map(site, (resolvedSite) => ({ stdout, resolvedSite })),
+        ),
+        Effect.flatMap(({ stdout, resolvedSite }) => {
+          const decoded = decodeJiraIssueListJson(stdout, resolvedSite);
           return Result.isSuccess(decoded)
             ? Effect.succeed({ issues: decoded.success, jql })
             : Effect.fail(decodeFailure("list"));
@@ -190,8 +209,11 @@ export const make = Effect.gen(function* () {
       ])
       .pipe(
         Effect.mapError(serviceError),
-        Effect.flatMap(({ stdout }) => {
-          const decoded = decodeJiraIssueDetailJson(stdout);
+        Effect.flatMap(({ stdout }) =>
+          Effect.map(site, (resolvedSite) => ({ stdout, resolvedSite })),
+        ),
+        Effect.flatMap(({ stdout, resolvedSite }) => {
+          const decoded = decodeJiraIssueDetailJson(stdout, resolvedSite);
           return Result.isSuccess(decoded)
             ? Effect.succeed(decoded.success)
             : Effect.fail(decodeFailure("detail"));

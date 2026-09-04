@@ -35,8 +35,10 @@ function expectSuccess<A>(result: Result.Result<A, unknown>): A {
 }
 
 describe("decodeJiraIssueListJson", () => {
-  it("normalizes ACLI search output and derives the browser URL", () => {
-    const issues = expectSuccess(decodeJiraIssueListJson(JSON.stringify({ issues: [issue()] })));
+  it("normalizes ACLI search output and derives the browser URL from the site", () => {
+    const issues = expectSuccess(
+      decodeJiraIssueListJson(JSON.stringify({ issues: [issue()] }), "example.atlassian.net"),
+    );
 
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({
@@ -53,10 +55,16 @@ describe("decodeJiraIssueListJson", () => {
 
   it("accepts array output and skips malformed entries", () => {
     const issues = expectSuccess(
-      decodeJiraIssueListJson(JSON.stringify([issue(), { key: "BROKEN" }])),
+      decodeJiraIssueListJson(JSON.stringify([issue(), { key: "BROKEN" }]), null),
     );
 
     expect(issues.map(({ key }) => key)).toEqual(["APP-42"]);
+  });
+
+  it("omits the browser URL when the site is unknown", () => {
+    const issues = expectSuccess(decodeJiraIssueListJson(JSON.stringify([issue()]), null));
+
+    expect(issues[0]?.url).toBeNull();
   });
 });
 
@@ -90,6 +98,7 @@ describe("decodeJiraIssueDetailJson", () => {
             },
           }),
         ),
+        "example.atlassian.net",
       ),
     );
 
