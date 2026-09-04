@@ -20,7 +20,8 @@ import {
   SquareCheckBigIcon,
   UnlinkIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
 
 import { RightPanelTabs } from "../components/RightPanelTabs";
 import { WorkspacePageContainer } from "../components/WorkspacePageContainer";
@@ -56,7 +57,10 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { Textarea } from "../components/ui/textarea";
 import { toastManager } from "../components/ui/toast";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
+import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { resolveShortcutCommand } from "../keybindings";
+import { isTerminalFocused } from "../lib/terminalFocus";
 import { buildJiraStarterPrompt, normalizeJiraSite } from "../jiraSession";
 import { jiraTransitionStatusOptions } from "../jiraStatusOptions";
 import { jiraIssueFacets } from "../jiraWorkspace";
@@ -75,6 +79,7 @@ import { useDebouncedValue } from "../state/queries";
 import { useAtomCommand } from "../state/use-atom-command";
 import { threadEnvironment } from "../state/threads";
 import { cn } from "~/lib/utils";
+import { primaryServerKeybindingsAtom } from "~/state/server";
 
 export interface JiraSearch {
   readonly environmentId?: EnvironmentId;
@@ -277,17 +282,6 @@ function JiraWorkspace() {
     [updateSearch],
   );
 
-  if (isReady && capableEnvironments.length === 0) {
-    return <JiraUnavailable />;
-  }
-
-  const refresh = () => {
-    connection.refresh();
-    issues.refresh();
-    facetIssues.refresh();
-    detail.refresh();
-  };
-
   const selectSurfaceInUrl = (surface: JiraIssueSurface | null) =>
     updateSearch(
       surface === null
@@ -321,6 +315,38 @@ function JiraWorkspace() {
   const closeAllSurfaces = () => {
     useRightPanelStore.getState().closeAllSurfaces(rightPanelRef);
     selectSurfaceInUrl(null);
+  };
+
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  // This page has no ChatView, so the shared panel handles `rightPanel.close`
+  // itself. With nothing open the event falls through to its native meaning.
+  const closeActiveSurfaceFromShortcut = useEffectEvent((event: KeyboardEvent) => {
+    if (activeJiraSurface === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) closeSurface(activeJiraSurface);
+  });
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isCommandPaletteOpen()) return;
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: { terminalFocus: isTerminalFocused() },
+      });
+      if (command === "rightPanel.close") closeActiveSurfaceFromShortcut(event);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [keybindings]);
+
+  if (isReady && capableEnvironments.length === 0) {
+    return <JiraUnavailable />;
+  }
+
+  const refresh = () => {
+    connection.refresh();
+    issues.refresh();
+    facetIssues.refresh();
+    detail.refresh();
   };
 
   return (
@@ -487,7 +513,7 @@ function JiraWorkspace() {
                 environmentId={detailEnvironmentId}
                 error={detail.error}
                 isPending={detail.isPending}
-                key={selectedKey ?? "empty"}
+                key={`${detailEnvironmentId}:${selectedKey ?? "empty"}`}
                 linkedThreads={linkedThreads}
                 onChanged={() => {
                   issues.refresh();
