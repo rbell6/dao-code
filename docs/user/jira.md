@@ -5,7 +5,7 @@ sidebar to search work, run JQL, inspect an issue, add a comment, or move it to 
 
 ## Set up Jira
 
-Jira commands run on the machine hosting your T3 Code environment. Install Atlassian CLI there by
+Jira commands run on the machine hosting your Dao environment. Install Atlassian CLI there by
 following the [ACLI installation guide](https://developer.atlassian.com/cloud/acli/guides/install-acli/),
 then sign in:
 
@@ -35,7 +35,7 @@ updates unless the JQL supplies its own order.
 
 ## Start work from a ticket
 
-Open an issue and select **Start session**. Choose a T3 Code project, review the starter prompt,
+Open an issue and select **Start session**. Choose a Dao project, review the starter prompt,
 then continue to the new thread. The prompt includes the issue key, link, summary, and description.
 The project's normal model and workspace defaults still apply.
 
@@ -45,13 +45,13 @@ linked thread, its branch, and its pull request when one exists. Use the unlink 
 thread when it no longer belongs to that issue.
 
 Pull requests created from a linked thread include the Jira key in the title and a Jira link in the
-description. T3 Code also links the new pull request to the thread, so the issue, thread, and pull
+description. Dao also links the new pull request to the thread, so the issue, thread, and pull
 request remain connected in the Jira workspace.
 
 ## Current limits
 
 - Jira Cloud is supported through Atlassian CLI. Jira Data Center is not yet supported.
-- Each T3 Code environment uses the account and active site selected in ACLI on that environment.
+- Each Dao environment uses the account and active site selected in ACLI on that environment.
 - The Jira workspace is available in the web app and desktop app. Mobile does not yet have a Jira
   workspace.
 - Starting a session prepares its prompt in the composer. Review it and send the first message to

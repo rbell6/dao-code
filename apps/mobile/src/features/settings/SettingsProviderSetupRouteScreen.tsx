@@ -337,7 +337,7 @@ function ProviderSetupScreen({ environmentId, instanceId }: ProviderSetupRoutePa
                     onPress={() => {
                       Alert.alert(
                         "Remove the Antigravity install?",
-                        `This removes T3's managed install from ${environmentLabel}. Providers that use it will need it installed again. Google credentials and threads stay.`,
+                        `This removes Dao's managed install from ${environmentLabel}. Providers that use it will need it installed again. Google credentials and threads stay.`,
                         [
                           { text: "Cancel", style: "cancel" },
                           {

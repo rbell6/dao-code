@@ -781,7 +781,7 @@ function IssueDetail({
         <h3 className="text-sm font-semibold">Work</h3>
         {linkedThreads.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">
-            No T3 Code sessions are linked to this ticket.
+            No Dao sessions are linked to this ticket.
           </p>
         ) : (
           <div className="mt-2 space-y-1">
@@ -963,7 +963,7 @@ function StartJiraSessionDialog({
         <DialogHeader>
           <DialogTitle>Start a session for {issue.key}</DialogTitle>
           <DialogDescription>
-            Choose the project T3 Code should work in. You can review the prompt before sending it.
+            Choose the project Dao should work in. You can review the prompt before sending it.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-4">
